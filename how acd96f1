@@ -1,0 +1,58 @@
+[33md462265[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add Python plotting and update main
+[33m8e0ae82[m Added python plot script
+[33macd96f1[m Merge branch 'main' of github.com:AMSC-25-26/montecarlo-01
+[33mf16230f[m polytope beginning
+[33m0d31658[m Revise README with configuration and usage updates
+[33m4eb51f9[m[33m ([m[1;31morigin/mimmo[m[33m)[m Merge remote-tracking branch 'origin/mimmo' into mimmo
+[33m0fb3e65[m moved integrations inside benchmark.cpp from main.cpp
+[33m9b83053[m Implemented hsphere benchmark + fixed main
+[33md592094[m Fixed circle implementation in benchmarks
+[33mb1ba6f4[m Added benchmarks mimmo version
+[33ma2a3af3[m renamed hyperRectangle to hyperrectangle to keep the same convention
+[33mcb9ff6e[m modified class from 3Dcylinder to generalized HyperCylinder
+[33m980d31c[m fixed bug in gnuplot title formatting
+[33m1b783e0[m Just removed an if
+[33m5d0e7e7[m added 3Dcylinder domain
+[33md52e5cd[m Delete build directory
+[33m6fd2432[m Add project roadmap and TODOs to TODO.md
+[33m34db2a6[m Enhance README with project details and instructions
+[33m5ca05e8[m added plots for the integrate function
+[33m21aa83d[m fixed bug with 1D and 2D plots having all points inside the integration domain
+[33m78d5705[m fixed bug that made every sample appear inside the integration domain inside the plots
+[33mbf4f233[m added gnuplotting which opens automatically if PLOT is set to true in main.cpp
+[33m7d64f26[m fixed wrong volume computation in hypersphere, now returns sampling domain volume
+[33m85bcf59[m added parsing of function from function.txt file using a class muParserxInterface.hpp that uses the library muParserX include in the project files under the directory src/external/
+[33ma24e1fa[m Added integration on HyperRectangular domains
+[33m6de16eb[m Montecarlo Integration, using a uniform distribution, on an hyperspherical domain, works
+[33mfc516e1[m Montecarlo Integration, using a uniform distribution, on an hyperspherical domain, works
+[33m0feef96[m Template implementation
+[33m1d5e6bf[m Template implementation
+[33m11f6783[m added montecarlo_integration class draft (header and implementation)
+[33maa2208c[m Solving some errors
+[33m2469532[m geometry.hpp
+[33m5369c7a[m geometry.hpp
+[33m152b090[m Merge branch 'main' of github.com:AMSC-25-26/montecarlo-01
+[33mb6b0e1c[m Randomizer
+[33m0190b63[m completely changed main class to instatiate hypersphere domain through statically defined constants
+[33m660b329[m fixed non-const definition of method getBounds in integration_domain.hpp
+[33ma1dc1bf[m added abstract integrator class
+[33m1ce500b[m modifed definition of integration_domain and hypersphere from _H and _HPP
+[33m628ded2[m added argument to choose the number of points to generate for the integration
+[33m4345e22[m minor fixes in CmakeLists and hypersphere header
+[33mc0f184b[m hypersphere implementation
+[33mb582287[m added arguments to main.cpp and -h
+[33m8ab11c9[m added hypersphere header
+[33maff132e[m Written first draft of main.cpp
+[33m4d60b73[m Integration_Domain.hpp
+[33me0f7a4f[m fixed syntax error in integration_domain.h
+[33m5784d30[m update of Cmake
+[33m1145591[m added cmake to project src
+[33m489f591[m added header for integration domain interface
+[33mb4c0380[m Merge branch 'main' of github.com:AMSC-26-26/montecarlo-01
+[33m273bb73[m Fixed RandomNumbersAndDistributions
+[33m4833d12[m Fix typo in Statistics namespace
+[33mfa41d4d[m added domains package in src/
+[33m7739431[m added placeholders for src packages structure
+[33mea7c213[m Setting up GitHub Classroom Feedback
+[33m45399d5[m[33m ([m[1;31morigin/feedback[m[33m)[m GitHub Classroom Feedback
+[33mbc9ab3a[m Initial commit
