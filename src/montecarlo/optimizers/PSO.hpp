@@ -24,6 +24,16 @@ namespace optimizers {
      */
     class PSO : public Optimizer {
     public:
+        // Moved Particle struct to public to allow external visualization
+        struct Particle {
+            Coordinates position;
+            Coordinates velocity;
+
+            Coordinates best_position; // Personal Best (pBest) location
+            Real best_value;           // Personal Best (pBest) value
+            Real current_value;        // Current value
+        };
+
         // Constructor takes configuration, defaults provided in struct
         explicit PSO(const PSOConfig& config = PSOConfig{});
 
@@ -37,17 +47,12 @@ namespace optimizers {
         void step() override;
         [[nodiscard]] Solution getBestSolution() const override;
 
+        // Getter to access the swarm from outside (for plotting/debugging)
+        [[nodiscard]] const std::vector<Particle>& getParticles() const {
+            return m_swarm;
+        }
+
     private:
-        // Internal struct representing a single Particle
-        struct Particle {
-            Coordinates position;
-            Coordinates velocity;
-
-            Coordinates best_position; // Personal Best (pBest) location
-            Real best_value;           // Personal Best (pBest) value
-            Real current_value;        // Current value
-        };
-
         // Helper to initialize the swarm randomly within bounds
         void initialize();
 

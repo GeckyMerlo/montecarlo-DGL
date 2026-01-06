@@ -426,6 +426,57 @@ void runRastriginTest(opt::PSO& pso, int dim) {
     }
 }
 
+void runVisualPSOBenchmark() {
+    std::cout << "===========================================" << std::endl;
+    std::cout << "   Visual PSO Benchmark (2D Animation)" << std::endl;
+    std::cout << "===========================================" << std::endl;
+
+    // 1. Configuration
+    opt::PSOConfig config;
+    config.population_size = 30; // 30 particles
+    config.max_iterations = 50;  // 50 frames for animation
+    opt::PSO pso(config);
+
+    // 2. Objective Function (Rastrigin 2D)
+    // Global minimum is at (0,0)
+    auto rastrigin = [](const opt::Coordinates& x) {
+        double A = 10.0;
+        double sum = 0.0;
+        // M_PI is typically defined in <cmath>, ensure it is available or use 3.14...
+        double pi = 3.14159265358979323846;
+        for (double val : x) sum += val*val - A*std::cos(2*pi*val);
+        return 2*A + sum;
+    };
+
+    pso.setObjectiveFunction(rastrigin);
+    pso.setBounds({-5.12, -5.12}, {5.12, 5.12});
+    pso.setMode(opt::OptimizationMode::MINIMIZE);
+
+    // 3. Prepare Plotting
+    std::string baseName = "pso_vis";
+    std::string gridFile = "pso_grid.dat";
+
+    std::cout << "Generating background grid (heatmap)..." << std::endl;
+    // Save the static background (function landscape)
+    saveFunctionGrid(gridFile, rastrigin, -5.12, 5.12, -5.12, 5.12, 100);
+
+    // 4. Set Callback to save each frame
+    pso.setCallback([&](const opt::Solution&, size_t iter) {
+        // Use the public getter to access particle positions
+        saveSwarmFrame(baseName, iter, pso.getParticles());
+        std::cout << "Saved frame " << iter << "/" << config.max_iterations << "\r" << std::flush;
+    });
+
+    // 5. Run Optimization
+    std::cout << "Running optimization..." << std::endl;
+    pso.optimize();
+    std::cout << "\nOptimization finished." << std::endl;
+
+    // 6. Launch Animation
+    std::cout << "Launching Gnuplot animation..." << std::endl;
+    createPSOAnimationScript("run_pso.gp", gridFile, baseName, config.max_iterations, "PSO Rastrigin 2D");
+}
+
 // --- Main Optimization Benchmark Entry Point ---
 
 void runOptimizationBenchmarks() {
@@ -454,8 +505,12 @@ void runOptimizationBenchmarks() {
 
         // Run Test 2
         runBoundaryTest(pso, lower_bounds, upper_bounds);
+
         // Run Test 3: 10-Dimensional Rastrigin
         runRastriginTest(pso, 10);
+
+        // Run visual test:
+        runVisualPSOBenchmark();
 
     } catch (const std::exception& e) {
         std::cerr << "Optimization failed: " << e.what() << std::endl;

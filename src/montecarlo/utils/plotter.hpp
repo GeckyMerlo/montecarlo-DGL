@@ -211,4 +211,88 @@ inline void createFunctionGnuplotScript(const std::string& tempRawDataFile,
     std::system(command.c_str());
 }
 
+/**
+ * 3. SAVE FUNCTION GRID (Background for PSO)
+ * Evaluates the objective function on a grid to create a heatmap/contour map.
+ * Useful for visualizing the optimization landscape.
+ */
+template <typename Func>
+inline void saveFunctionGrid(const std::string& filename, const Func& func,
+                             double x_min, double x_max, double y_min, double y_max,
+                             int resolution = 100) {
+    std::ofstream out(filename);
+    if (!out.is_open()) return;
+
+    double dx = (x_max - x_min) / resolution;
+    double dy = (y_max - y_min) / resolution;
+
+    for (int i = 0; i <= resolution; ++i) {
+        double x = x_min + i * dx;
+        for (int j = 0; j <= resolution; ++j) {
+            double y = y_min + j * dy;
+            std::vector<double> p = {x, y};
+            double val = func(p);
+            // Write format: X Y Value
+            out << x << " " << y << " " << val << "\n";
+        }
+        out << "\n"; // Blank line required for Gnuplot pm3d mode
+    }
+    out.close();
+}
+
+/**
+ * 4. SAVE SWARM FRAME
+ * Saves the positions of all particles for a specific iteration.
+ * Each file represents one frame of the animation.
+ */
+template <typename ParticleT>
+inline void saveSwarmFrame(const std::string& basename, size_t iteration, const std::vector<ParticleT>& swarm) {
+    std::string filename = basename + "_iter_" + std::to_string(iteration) + ".dat";
+    std::ofstream out(filename);
+    if (!out.is_open()) return;
+
+    for (const auto& p : swarm) {
+        // Check dimension: we only plot the first 2 dimensions
+        if (p.position.size() >= 2) {
+            out << p.position[0] << " " << p.position[1] << "\n";
+        }
+    }
+    out.close();
+}
+
+/**
+ * 5. CREATE ANIMATION SCRIPT
+ * Generates a Gnuplot script that loops through the saved frames to create an animation.
+ */
+inline void createPSOAnimationScript(const std::string& scriptName,
+                                     const std::string& gridFile,
+                                     const std::string& swarmBasename,
+                                     size_t max_iter,
+                                     const std::string& title) {
+    std::ofstream gp(scriptName);
+    if (!gp.is_open()) return;
+
+    gp << "set title '" << title << "'\n";
+    gp << "set view map\n"; // Top-down view (Heatmap)
+    gp << "set dgrid3d\n";  // Enable 3D grid data processing
+    gp << "set pm3d interpolate 0,0\n"; // Smooth color interpolation
+    gp << "set palette rgbformulae 33,13,10\n"; // Rainbow palette
+    gp << "unset key\n";
+    gp << "set size square\n";
+
+    // Gnuplot Loop for Animation
+    gp << "do for [i=0:" << (max_iter-1) << "] {\n";
+    gp << "    set title sprintf('" << title << " - Iter: %d', i)\n";
+    gp << "    plot '" << gridFile << "' with image, \\\n";
+    gp << "         sprintf('" << swarmBasename << "_iter_%d.dat', i) u 1:2 with points pt 7 ps 1.5 lc rgb 'white'\n";
+    gp << "    pause 0.1\n"; // Delay between frames (0.1 seconds)
+    gp << "}\n";
+    gp << "pause mouse close\n"; // Keep window open until clicked
+    gp.close();
+
+    // Execute Gnuplot in background
+    std::string command = "gnuplot " + scriptName + " > /dev/null 2>&1 &";
+    std::system(command.c_str());
+}
+
 #endif //MONTECARLO_1_PLOTTER_HPP
