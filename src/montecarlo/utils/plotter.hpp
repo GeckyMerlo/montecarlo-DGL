@@ -241,9 +241,8 @@ inline void saveFunctionGrid(const std::string& filename, const Func& func,
 }
 
 /**
- * 4. SAVE SWARM FRAME
- * Saves the positions of all particles for a specific iteration.
- * Each file represents one frame of the animation.
+ * 4. SAVE SWARM FRAME (Updated for 3D)
+ * Saves the positions (x, y, z) of all particles for a specific iteration.
  */
 template <typename ParticleT>
 inline void saveSwarmFrame(const std::string& basename, size_t iteration, const std::vector<ParticleT>& swarm) {
@@ -252,9 +251,12 @@ inline void saveSwarmFrame(const std::string& basename, size_t iteration, const 
     if (!out.is_open()) return;
 
     for (const auto& p : swarm) {
-        // Check dimension: we only plot the first 2 dimensions
-        if (p.position.size() >= 2) {
-            out << p.position[0] << " " << p.position[1] << "\n";
+        if (p.position.size() >= 3) {
+            // Write X Y Z
+            out << p.position[0] << " " << p.position[1] << " " << p.position[2] << "\n";
+        } else if (p.position.size() == 2) {
+            // Fallback for 2D (Z=0)
+            out << p.position[0] << " " << p.position[1] << " 0.0\n";
         }
     }
     out.close();
@@ -294,5 +296,118 @@ inline void createPSOAnimationScript(const std::string& scriptName,
     std::string command = "gnuplot " + scriptName + " > /dev/null 2>&1 &";
     std::system(command.c_str());
 }
+
+/**
+ * 7. SAVE 3D SLICES (Heatmaps on walls)
+ * Generates grid data for the XY (bottom), XZ (back), and YZ (side) planes.
+ * Used to visualize the 3D function landscape on the bounding box walls.
+ */
+template <typename Func>
+inline void saveFunctionSlices3D(const std::string& filename, const Func& func,
+                                 double min, double max, int resolution = 50) {
+    std::ofstream out(filename);
+    if (!out.is_open()) return;
+
+    double step = (max - min) / resolution;
+
+    // 1. XY Plane (at Z = min) - "Floor"
+    for (int i = 0; i <= resolution; ++i) {
+        double x = min + i * step;
+        for (int j = 0; j <= resolution; ++j) {
+            double y = min + j * step;
+            double z = min; // Bottom
+            double val = func({x, y, z});
+            out << x << " " << y << " " << z << " " << val << "\n";
+        }
+        out << "\n";
+    }
+    out << "\n\n";
+
+    // 2. XZ Plane (at Y = min) - "Back Right Wall" (FIXED: was max)
+    // Changing to Y=min moves the wall to the back, opening the view.
+    for (int i = 0; i <= resolution; ++i) {
+        double x = min + i * step;
+        for (int k = 0; k <= resolution; ++k) {
+            double z = min + k * step;
+            double y = min; // Fixed at back (min)
+            double val = func({x, y, z});
+            out << x << " " << y << " " << z << " " << val << "\n";
+        }
+        out << "\n";
+    }
+    out << "\n\n";
+
+    // 3. YZ Plane (at X = min) - "Back Left Wall"
+    for (int j = 0; j <= resolution; ++j) {
+        double y = min + j * step;
+        for (int k = 0; k <= resolution; ++k) {
+            double z = min + k * step;
+            double x = min; // Fixed at left (min)
+            double val = func({x, y, z});
+            out << x << " " << y << " " << z << " " << val << "\n";
+        }
+        out << "\n";
+    }
+    out.close();
+}
+
+/**
+ * 6. CREATE 3D ANIMATION SCRIPT (FIXED VISIBILITY)
+ * Generates a Gnuplot script for a 3D scatter plot overlaid on function slices.
+ */
+inline void createPSOAnimationScript3D(const std::string& scriptName,
+                                       const std::string& slicesFile,
+                                       const std::string& swarmBasename,
+                                       size_t max_iter,
+                                       const std::string& title,
+                                       double min_bound, double max_bound) {
+    std::ofstream gp(scriptName);
+    if (!gp.is_open()) return;
+
+    gp << "set title '" << title << "'\n";
+
+    // View from the "open" side of the cube towards the back walls
+    gp << "set view 60, 30\n";
+
+    gp << "set grid\n";
+    gp << "set xtics\n";
+    gp << "set ytics\n";
+    gp << "set ztics\n";
+
+    // [FIX 1] Removed 'set pm3d depthorder' which hides particles.
+    // [FIX 2] Use 'explicit' to prevent pm3d from messing with points.
+    gp << "set pm3d explicit\n";
+    gp << "set palette rgbformulae 33,13,10\n";
+    gp << "unset colorbox\n";
+
+    // Fixed range
+    gp << "set xrange [" << min_bound << ":" << max_bound << "]\n";
+    gp << "set yrange [" << min_bound << ":" << max_bound << "]\n";
+    gp << "set zrange [" << min_bound << ":" << max_bound << "]\n";
+
+    // Animation Loop
+    gp << "do for [i=0:" << (max_iter-1) << "] {\n";
+    gp << "    set title sprintf('" << title << " - Iter: %d', i)\n";
+
+    // [FIX 3] Draw Slices FIRST (Background), Particles SECOND (Foreground).
+    // Changed particle color to 'black' for maximum visibility.
+    // 'nocontour' ensures no lines are drawn on the heatmap slices.
+    gp << "    splot '" << slicesFile << "' u 1:2:3:4 with pm3d nocontour title '', \\\n";
+    gp << "          sprintf('" << swarmBasename << "_iter_%d.dat', i) u 1:2:3 with points pt 7 ps 1.5 lc rgb 'black' title 'Particles'\n";
+
+    gp << "    pause 0.1\n";
+    gp << "}\n";
+    gp << "pause mouse close\n";
+    gp.close();
+
+    // Execute visibly
+    std::cout << "Executing Gnuplot 3D script: " << scriptName << std::endl;
+    std::string command = "gnuplot -p " + scriptName;
+    int ret = std::system(command.c_str());
+    if (ret != 0) {
+        std::cerr << "GNUPLOT ERROR (Code " << ret << "): Ensure gnuplot is installed." << std::endl;
+    }
+}
+
 
 #endif //MONTECARLO_1_PLOTTER_HPP

@@ -382,7 +382,7 @@ void runRastriginTest(opt::PSO& pso, int dim) {
     // 3. Configure PSO specifically for a harder problem
     // We need more particles and more time to explore 10 dimensions
     opt::PSOConfig hard_config;
-    hard_config.population_size = 1000; // Increased from 50 - with population 100 only finds local minima
+    hard_config.population_size = 500; // Increased from 50 - with population 100 only finds local minima
     hard_config.max_iterations = 1000; // Increased from 100
     hard_config.inertia_weight = 0.729; // Classic "constriction factor" value
     hard_config.cognitive_coeff = 1.49;
@@ -433,8 +433,8 @@ void runVisualPSOBenchmark() {
 
     // 1. Configuration
     opt::PSOConfig config;
-    config.population_size = 30; // 30 particles
-    config.max_iterations = 50;  // 50 frames for animation
+    config.population_size = 60; // 30 particles
+    config.max_iterations = 100;  // 50 frames for animation
     opt::PSO pso(config);
 
     // 2. Objective Function (Rastrigin 2D)
@@ -477,6 +477,60 @@ void runVisualPSOBenchmark() {
     createPSOAnimationScript("run_pso.gp", gridFile, baseName, config.max_iterations, "PSO Rastrigin 2D");
 }
 
+void runVisualPSO3DBenchmark() {
+    std::cout << "===========================================" << std::endl;
+    std::cout << "   Visual PSO Benchmark (3D Animation)" << std::endl;
+    std::cout << "===========================================" << std::endl;
+
+    // 1. Configuration
+    opt::PSOConfig config;
+    config.population_size = 100;
+    config.max_iterations = 150;
+    opt::PSO pso(config);
+
+    // 2. Objective: 3D Rastrigin Function
+    auto rastrigin3D = [](const opt::Coordinates& x) {
+        double sum = 0.0;
+        double A = 10.0;
+        double pi = 3.14159265358979323846;
+        for (double val : x) {
+            sum += val * val - A * std::cos(2 * pi * val);
+        }
+        return 3.0 * A + sum;
+    };
+
+    pso.setObjectiveFunction(rastrigin3D);
+
+    // Bounds [-5.12, 5.12]
+    double min_b = -5.12;
+    double max_b = 5.12;
+    pso.setBounds({min_b, min_b, min_b}, {max_b, max_b, max_b});
+    pso.setMode(opt::OptimizationMode::MINIMIZE);
+
+    // 3. Setup Visualization
+    std::string baseName = "pso_vis_3d";
+    std::string slicesFile = "pso_slices_3d.dat"; // [NEW] File for wall heatmaps
+
+    // [NEW] Generate the 3D Slices (Walls)
+    std::cout << "Generating 3D function slices (walls)..." << std::endl;
+    saveFunctionSlices3D(slicesFile, rastrigin3D, min_b, max_b, 50); // 50 = resolution
+
+    // 4. Callback
+    pso.setCallback([&](const opt::Solution&, size_t iter) {
+        saveSwarmFrame(baseName, iter, pso.getParticles());
+        if (iter % 10 == 0) std::cout << "Generating Frame " << iter << "/" << config.max_iterations << "\r" << std::flush;
+    });
+
+    // 5. Run
+    std::cout << "Running 3D optimization..." << std::endl;
+    pso.optimize();
+    std::cout << "\nOptimization finished." << std::endl;
+
+    // 6. Launch 3D Animation (Pass slicesFile)
+    std::cout << "Launching Gnuplot 3D animation..." << std::endl;
+    createPSOAnimationScript3D("run_pso_3d.gp", slicesFile, baseName, config.max_iterations, "PSO 3D Rastrigin", min_b, max_b);
+}
+
 // --- Main Optimization Benchmark Entry Point ---
 
 void runOptimizationBenchmarks() {
@@ -511,6 +565,9 @@ void runOptimizationBenchmarks() {
 
         // Run visual test:
         runVisualPSOBenchmark();
+
+        // Run 3D visual test
+        runVisualPSO3DBenchmark();
 
     } catch (const std::exception& e) {
         std::cerr << "Optimization failed: " << e.what() << std::endl;
