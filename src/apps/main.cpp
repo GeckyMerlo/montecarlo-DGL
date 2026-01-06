@@ -2,13 +2,15 @@
 #include <string>
 #include <fstream>
 #include <limits>
-#include "utils/plotter.hpp"
-#include "benchmarks.hpp"
 #include <array>
 #include <vector>
 #include <stdexcept>
-#include "integrators/montecarlo_integrator.hpp"
-#include "domains/polytope.hpp"
+
+#include "apps/benchmarks.hpp"
+#include <montecarlo/utils/plotter.hpp>
+#include <montecarlo/integrators/montecarlo_integrator.hpp>
+#include <montecarlo/domains/polytope.hpp>
+#include <montecarlo/geometry.hpp>
 
 // Path to the file containing the function.
 #define FUNCTION_FILE "../function.txt"

@@ -23,7 +23,7 @@ auto Hypersphere<dim>::getBounds() const -> Bounds<dim> {
 }
 
 template <size_t dim>
-double Hypersphere<dim>::getVolume() const{
+double Hypersphere<dim>::getBoxVolume() const{
     return std::pow(2 * radius, dim);
 }
 template <size_t dim>

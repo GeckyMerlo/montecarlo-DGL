@@ -52,7 +52,7 @@ Bounds<dim> PolyTope<dim>::getBounds() const{
 }
 
 template<size_t dim>
-double PolyTope<dim>::getVolume() const {
+double PolyTope<dim>::getBoxVolume() const {
     Bounds<dim> bou = this->getBounds();
     double vol = 1;
     for (int i = 0; i <dim; ++i) {

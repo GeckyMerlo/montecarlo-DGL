@@ -1,8 +1,9 @@
 //
 // Created by domenico on 12/3/25.
 //
-#include "benchmarks.hpp"
-#include "utils/muParserXInterface.hpp"
+
+#include "apps/benchmarks.hpp"
+#include <montecarlo/utils/muParserXInterface.hpp>
 
 using namespace MuParserInterface;
 
@@ -62,6 +63,14 @@ void executeBenchmark(const std::string& title,
         auto endTimer = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer - startTimer);
 
+        auto startTimer2 = std::chrono::high_resolution_clock::now();
+
+        // 1. Integration (Data points are written to rawDataFile by the integrator)
+        double result2 = integrator.integrate_importance(f, n_i, UniformProposal<dim>(domain), 12345);
+
+        auto endTimer2 = std::chrono::high_resolution_clock::now();
+        auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer2 - startTimer2);
+
         // Store results
         results newLine;
         newLine.n_samples = n_i;
@@ -70,9 +79,13 @@ void executeBenchmark(const std::string& title,
         testResults.push_back(newLine);
 
         // Print to console
-        std::cout << std::setw(12) << n_i << " Samples"
+        std::cout << std::setw(12) << n_i << " Normal Samples"
                   << std::setw(18) << std::fixed << std::setprecision(6) << result
                   << std::setw(18) << duration.count() << "ms" << std::endl;
+
+        std::cout << std::setw(12) << n_i << " Important Samples"
+                  << std::setw(18) << std::fixed << std::setprecision(6) << result2
+                  << std::setw(18) << duration2.count() << "ms" << std::endl;
 
         // 2. Plotting (Inside the loop to show progress for each sample size)
         if (useGnuplot) {

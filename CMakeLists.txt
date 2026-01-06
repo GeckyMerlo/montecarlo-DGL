@@ -19,18 +19,15 @@ include_directories(src/external/muparserx/parser)
 # Collect all .cpp files in src/ and subfolders
 file(GLOB_RECURSE SOURCES src/*.cpp)
 
-# === FIX START ===
-# Remove anything inside src/external from the list.
-# The library is already built by add_subdirectory; we don't want to compile
-# its sources (or its documentation files) into our executable manually.
-list(FILTER SOURCES EXCLUDE REGEX ".*/src/external/.*")
-# === FIX END ===
+add_executable(montecarlo_1
+        src/apps/main.cpp
+        src/apps/benchmarks.cpp
+)
 
-# Optional: print sources for debugging
-message(STATUS "Project sources: ${SOURCES}")
-
-# --- Main executable ---
-add_executable(montecarlo_1 ${SOURCES})
+# Ora si può fare include <montecarlo/...>
+target_include_directories(montecarlo_1 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 # --- Find Boost libraries ---
 find_package(Boost REQUIRED COMPONENTS iostreams filesystem system)

@@ -32,7 +32,7 @@ auto HyperCylinder<dim>::getBounds() const -> Bounds<dim> {
 }
 
 template <size_t dim>
-double HyperCylinder<dim>::getVolume() const {
+double HyperCylinder<dim>::getBoxVolume() const {
     // Volume of the bounding hypercube: (2*r)^(dim-1) * height
     return std::pow(2.0 * radius, static_cast<double>(dim - 1)) * height;
 }

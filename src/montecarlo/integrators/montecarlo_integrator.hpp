@@ -2,6 +2,7 @@
 #define MONTECARLO_1_MONTECARLO_INTEGRATOR_HPP
 
 #include "../domains/integration_domain.hpp"
+#include "../proposals/proposal.hpp"
 #include "integrator.hpp"
 #include <functional>
 
@@ -12,6 +13,8 @@ public:
 
     // Calcola l'integrale di una funzione 'f' usando Monte Carlo
     double integrate(const std::function<double(const Point<dim>&)>& f, int n_samples);
+
+    double integrate_importance(const std::function<double(const Point<dim>&)>& f, int n_samples, const Proposal<dim>& proposal, uint32_t seed);
 };
 
 #include "montecarlo_integrator.tpp"

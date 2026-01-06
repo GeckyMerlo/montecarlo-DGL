@@ -15,7 +15,7 @@ public:
     virtual Bounds<dim> getBounds() const = 0;
 
     // returns the volume of the integration domain
-    virtual double getVolume() const = 0;
+    virtual double getBoxVolume() const = 0;
 
     // returns true if the given point is inside the integration domain
     virtual bool isInside(const Point<dim> &point) const = 0;

@@ -16,7 +16,7 @@ public:
 
     Bounds<dim> getBounds() const override;
 
-    double getVolume() const override;
+    double getBoxVolume() const override;
 
     bool isInside(const Point<dim> &point) const override;
 private:

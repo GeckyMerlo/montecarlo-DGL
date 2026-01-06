@@ -22,7 +22,7 @@ auto HyperRectangle<dim>::getBounds() const -> Bounds<dim> {
 }
 
 template <size_t dim>
-double HyperRectangle<dim>::getVolume() const{
+double HyperRectangle<dim>::getBoxVolume() const{
     double volume = 1;
     for(size_t i = 0; i < dim; ++i) {
         volume = volume * dimensions[i];

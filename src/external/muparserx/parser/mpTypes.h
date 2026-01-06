@@ -44,7 +44,7 @@
 #include <complex>
 
 //--- muParserX framework ---------------------------------------------------
-#include "suSortPred.h"  // We need the string utils sorting predicates
+#include "suSortPred.h"
 #include "mpDefines.h"
 #include "mpMatrix.h"
 

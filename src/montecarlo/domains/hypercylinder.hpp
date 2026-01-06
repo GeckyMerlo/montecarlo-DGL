@@ -30,7 +30,7 @@ public:
      * @brief Returns the volume of the bounding box (Sampling Volume).
      * Used for Monte Carlo weight calculation: (2r)^(n-1) * h.
      */
-    double getVolume() const override;
+    double getBoxVolume() const override;
 
     /**
      * @brief Checks if point is inside the hypercylinder.

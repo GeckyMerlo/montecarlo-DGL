@@ -5,11 +5,13 @@
 #ifndef MONTECARLO_1_BENCHMARKS_HPP
 #define MONTECARLO_1_BENCHMARKS_HPP
 
-#include "domains/hypercylinder.hpp"
-#include "domains/hyperrectangle.hpp"
-#include "domains/hypersphere.hpp"
-#include "geometry.hpp"
-#include "integrators/montecarlo_integrator.hpp"
+#include <montecarlo/domains/hypercylinder.hpp>
+#include <montecarlo/domains/hyperrectangle.hpp>
+#include <montecarlo/domains/hypersphere.hpp>
+#include <montecarlo/geometry.hpp>
+#include <montecarlo/integrators/montecarlo_integrator.hpp>
+#include <montecarlo/proposals/uniformProposal.hpp>
+#include <montecarlo/utils/plotter.hpp>
 
 #include <fstream>
 #include <iostream>
@@ -20,7 +22,6 @@
 #include <functional>
 #include <thread>
 #include <cmath>
-#include "utils/plotter.hpp"
 
 // Struct used to write through the save results function the results in a file of name file_name
 struct results {
@@ -28,7 +29,8 @@ struct results {
     std::string integration_result;
     std::string duration;
 };
-void saveResults(const std::string &file_name,const std::vector<results> &results);
+
+void saveResults(const std::string &filename, const std::vector<results> &results, const std::string &function_expr);
 
 // Functions that contain both the domains and the functions to integrate over them
 void uniDimIntegration();
