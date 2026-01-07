@@ -22,6 +22,7 @@ add_executable(montecarlo_1
 
 add_library(montecarlo_optimizers
         src/montecarlo/optimizers/PSO.cpp
+        src/montecarlo/optimizers/GA.cpp
 )
 
 # Ora si può fare include <montecarlo/...>
@@ -38,5 +39,4 @@ target_link_libraries(montecarlo_1 PRIVATE
         Boost::iostreams
         Boost::filesystem
         Boost::system
-        muparserx
 )

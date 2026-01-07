@@ -47,6 +47,7 @@ int main() {
     std::cout << "2. Use hardcoded function - Uses C++ Lambda (Faster)" << std::endl;
     std::cout << "3. Do you want to use a polytope con covex hull (IT: Inviluppo Convesso)" << std::endl;
     std::cout << "4. Run Optimizer Benchmarks (PSO)" << std::endl;
+    std::cout << "5. Run Optimizer Benchmarks (GA)" << std::endl;
     std::cout << "Choice: ";
 
     int choice;
@@ -139,8 +140,9 @@ int main() {
         std::cout << "Integral f=y   ≈ " << I_y     << "  (exact: 0)\n";
 
     } else if (choice == 4) {
-        runOptimizationBenchmarks();
-
+        runOptimizationBenchmarksPSO();
+    } else if (choice == 5) {
+        runOptimizationBenchmarksGA();
     }else {
         std::cerr << "Invalid choice selected." << std::endl;
         return 1;

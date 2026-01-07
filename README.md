@@ -33,7 +33,7 @@ sin(x) * exp(y) + (z^2 / 2)
 2. In container terminal enter:
   ```bash 
   export DISPLAY=host.docker.internal:0
-  gnuplot -persist -e "set term x11
+  gnuplot -persist -e "set term x11"
   ```
 
 ## 🚀 Build and Run

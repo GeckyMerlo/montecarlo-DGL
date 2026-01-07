@@ -13,6 +13,7 @@
 #include <montecarlo/proposals/uniformProposal.hpp>
 #include <montecarlo/utils/plotter.hpp>
 #include <montecarlo/optimizers/PSO.hpp>
+#include <montecarlo/optimizers/GA.hpp>
 
 #include <fstream>
 #include <iostream>
@@ -46,7 +47,8 @@ void eightDimIntegration();
 void twelveDimIntegration();
 
 // Function to run optimization benchmarks
-void runOptimizationBenchmarks();
+void runOptimizationBenchmarksPSO();
+void runOptimizationBenchmarksGA();
 
 // Function that call all the others
 void runBenchmarks(bool useGnuplot);
