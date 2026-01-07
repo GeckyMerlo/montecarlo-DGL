@@ -24,6 +24,18 @@ Use standard mathematical notation such as:
 ```text
 sin(x) * exp(y) + (z^2 / 2)
 ```
+## How to set gnuplot on mac
+
+1. Open XQuartx and enter in its terminal:
+  ```bash
+  xhost +localhost
+  ```
+2. In container terminal enter:
+  ```bash 
+  export DISPLAY=host.docker.internal:0
+  gnuplot -persist -e "set term x11
+  ```
+
 ## 🚀 Build and Run
 Ensure you have CMake, a C++ compiler, and muParserX installed.  
 From the root of the project:  
