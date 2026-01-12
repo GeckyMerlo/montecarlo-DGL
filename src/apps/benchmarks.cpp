@@ -217,6 +217,15 @@ void runBenchmarks(bool useGnuplot) {
     sphereIntegration(useGnuplot);
     rectangularIntegration(useGnuplot);
     cylinderIntegration(useGnuplot);
+
+}
+
+void runBenchmarksMH(bool useGnuplot) {
+    n_threads = std::thread::hardware_concurrency();
+    if (n_threads == 0) n_threads = 16;
+
+    std::string title = "Function NOT implemented for MH Benchmarking";
+
 }
 
 void runBenchmarks(const std::string& expression, bool useGnuplot) {

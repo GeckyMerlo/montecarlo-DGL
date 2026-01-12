@@ -44,10 +44,11 @@ int main() {
     // Mode choice
     std::cout << "Select mode:" << std::endl;
     std::cout << "1. Use function from file (function.txt) - Uses Parser (Slower)" << std::endl;
-    std::cout << "2. Use hardcoded function - Uses C++ Lambda (Faster)" << std::endl;
-    std::cout << "3. Do you want to use a polytope con covex hull (IT: Inviluppo Convesso)" << std::endl;
-    std::cout << "4. Run Optimizer Benchmarks (PSO)" << std::endl;
-    std::cout << "5. Run Optimizer Benchmarks (GA)" << std::endl;
+    std::cout << "2. Use hardcoded function with Uniform distribution - Uses C++ Lambda (Faster)" << std::endl;
+    std::cout << "3. Use hardcoded function with Metropolis-Hastings distribution - Uses C++ Lambda (Faster)" << std::endl;
+    std::cout << "4. Do you want to use a polytope con covex hull (IT: Inviluppo Convesso)" << std::endl;
+    std::cout << "5. Run Optimizer Benchmarks (PSO)" << std::endl;
+    std::cout << "6. Run Optimizer Benchmarks (GA)" << std::endl;
     std::cout << "Choice: ";
 
     int choice;
@@ -83,6 +84,10 @@ int main() {
         // Sends file to gnuPlot
         runBenchmarks(useGnuplot);
     }else if (choice == 3) {
+        std::cout << "\nStarting HARDCODED benchmarks with Metropolis-Hastings distribution..." << std::endl;
+        // Sends file to gnuPlot
+        runBenchmarksMH(useGnuplot);
+    }else if (choice == 4) {
         std::cout << "\nReading Points, Normals and Offsets..." << std::endl;
 
         std::vector<geom::Point<dim>> points = read_points_from_file<dim>("../points.txt");
@@ -139,9 +144,9 @@ int main() {
         std::cout << "Integral f=x   ≈ " << I_x     << "  (exact: 0)\n";
         std::cout << "Integral f=y   ≈ " << I_y     << "  (exact: 0)\n";
 
-    } else if (choice == 4) {
-        runOptimizationBenchmarksPSO();
     } else if (choice == 5) {
+        runOptimizationBenchmarksPSO();
+    } else if (choice == 6) {
         runOptimizationBenchmarksGA();
     }else {
         std::cerr << "Invalid choice selected." << std::endl;

@@ -35,13 +35,13 @@ MetropolisHastingsSampler<dim>::next(std::mt19937& rng)
     for (std::size_t k = 0; k < dim; ++k)
         y[k] += rw_normal(rng);
 
-    //Verifico che sia all'interno del diminio se no lo rifiuto subito
+    //Verifico che sia all'interno del dominio se no lo rifiuto subito
     /*
     if (!domain.isInside(y)) {
         return current;
     }
 
-    Tolto perchè ocnviene dare in pasto al metodo una funzione che returni 0 fuori dal dominio
+    Tolto perchè conviene dare in pasto al metodo una funzione che ritorni 0 fuori dal dominio
     target del tipo return domain.isInside(x) ? 1.0 : 0.0;
     */
 
