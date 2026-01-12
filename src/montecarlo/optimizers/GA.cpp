@@ -2,13 +2,17 @@
 #include "GA.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+
+// Global seed defined in main.cpp
+extern uint32_t GLOBAL_SEED;
 
 namespace optimizers {
 
     GA::GA(const GAConfig& config)
         : m_config(config),
           m_global_best(Solution::make_worst(OptimizationMode::MINIMIZE)),
-          m_rng(std::random_device{}())
+          m_rng(GLOBAL_SEED)
     {}
 
     void GA::setObjectiveFunction(ObjectiveFunction func) {

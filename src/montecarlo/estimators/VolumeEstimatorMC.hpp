@@ -25,7 +25,7 @@ class VolumeEstimatorMC {
 public:
     VolumeEstimate<dim>
     estimate(const IntegrationDomain<dim>& domain,
-             std::mt19937& rng,
+             uint32_t seed,
              std::size_t n_samples) const;
 };
 

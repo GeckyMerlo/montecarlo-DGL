@@ -24,7 +24,7 @@ public:
                                  const std::function<double(const geom::Point<dim>&)>& p,
                                  geom::Point<dim> x0,
                                  double deviation,
-                                 std::mt19937& rng,
+                                 uint32_t seed,
                                  std::size_t burn_in,
                                  std::size_t n_samples,
                                  std::size_t thinning,

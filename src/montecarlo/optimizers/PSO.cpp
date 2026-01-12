@@ -1,6 +1,10 @@
 #include "PSO.hpp"
 #include <stdexcept>
 #include <iostream>
+#include <cstdint>
+
+// Global seed defined in main.cpp
+extern uint32_t GLOBAL_SEED;
 
 namespace optimizers {
 
@@ -9,7 +13,7 @@ namespace optimizers {
           // Initialize global best to worst possible value based on default mode
           m_global_best(Solution::make_worst(OptimizationMode::MINIMIZE)),
           // Seed the random generator
-          m_rng(std::random_device{}())
+          m_rng(GLOBAL_SEED)
     {}
 
     void PSO::setObjectiveFunction(ObjectiveFunction func) {

@@ -5,6 +5,7 @@
 #include <array>
 #include <vector>
 #include <stdexcept>
+#include <cstdint>
 
 #include "apps/benchmarks.hpp"
 #include <montecarlo/utils/plotter.hpp>
@@ -16,6 +17,9 @@
 #define FUNCTION_FILE "../function.txt"
 
 constexpr int dim = 2;
+
+// Global seed for all random number generation (can be overridden via CLI)
+uint32_t GLOBAL_SEED = 12345;
 
 
 // --- FUNCTION PROTOTYPES ---
@@ -33,7 +37,21 @@ void read_normals_and_offsets_from_qhull_n(
 
 // --- MAIN ---
 
-int main() {
+int main(int argc, char* argv[]) {
+    // Check if user provided a seed as argument
+    if (argc > 1) {
+        try {
+            GLOBAL_SEED = std::stoul(argv[1]);
+            std::cout << "Using custom seed: " << GLOBAL_SEED << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Invalid seed argument. Using default seed: " << GLOBAL_SEED << std::endl;
+        }
+    } else {
+        std::cout << "Using default seed: " << GLOBAL_SEED << std::endl;
+        std::cout << "(To use a different seed, run: ./program <seed>)" << std::endl;
+    }
+    std::cout << std::endl;
+    
     // Closes already open gnuplot windows
     closeGnuplotWindows();
 
@@ -56,7 +74,7 @@ int main() {
         std::cerr << "Invalid input." << std::endl;
         return 1;
     }
-    // Clears buffer until next line
+    // Clear buffer until next line
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
     bool useGnuplot = false;
@@ -73,7 +91,6 @@ int main() {
             std::string expression = readFunctionFromFile(FUNCTION_FILE);
             std::cout << "\nLoaded expression: " << expression << std::endl;
             std::cout << "Starting PARSER benchmarks..." << std::endl;
-            // Passa il flag gnuplot
             runBenchmarks(expression, useGnuplot);
         } catch (const std::exception& e) {
             std::cerr << "Error: " << e.what() << std::endl;

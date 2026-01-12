@@ -14,9 +14,8 @@
 using namespace geom;
 using namespace std;
 
-//qhull Qt Qx Fn < points.txt > hull.txt <-- Comando per generare normali e offset
-//points.txt <-- file di testo con alla prima riga <num_points> <dim> e poi per ogni riga coordinate
-//      di un punto.
+// Command to generate normals and offsets: qhull Qt Qx Fn < points.txt > hull.txt
+// points.txt -- text file with first line: <num_points> <dim>, then coordinates of each point per line
 template <size_t dim>
 PolyTope<dim>::PolyTope(const std::vector<Point<dim>>&   vertices,
                         const std::vector<array<double, dim>>&  norms,

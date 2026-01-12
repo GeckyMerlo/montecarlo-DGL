@@ -24,6 +24,10 @@
 #include <functional>
 #include <thread>
 #include <cmath>
+#include <cstdint>
+
+// Global seed for all random number generation
+extern uint32_t GLOBAL_SEED;
 
 // Struct used to write through the save results function the results in a file of name file_name
 struct results {
@@ -54,7 +58,7 @@ void runOptimizationBenchmarksGA();
 void runBenchmarks(bool useGnuplot);
 
 // executes all benchmarks on parsed function.txt's function
-void runBenchmarks(const std::string& expression,bool useGnuplot);
+void runBenchmarks(const std::string& expression, bool useGnuplot);
 
 void runBenchmarksMH(bool useGnuplot);
 

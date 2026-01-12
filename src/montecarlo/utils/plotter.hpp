@@ -352,7 +352,7 @@ inline void saveFunctionSlices3D(const std::string& filename, const Func& func,
 }
 
 /**
- * 6. CREATE 3D ANIMATION SCRIPT (FIXED VISIBILITY)
+ * 6. CREATE 3D ANIMATION SCRIPT
  * Generates a Gnuplot script for a 3D scatter plot overlaid on function slices.
  */
 inline void createPSOAnimationScript3D(const std::string& scriptName,
@@ -374,8 +374,7 @@ inline void createPSOAnimationScript3D(const std::string& scriptName,
     gp << "set ytics\n";
     gp << "set ztics\n";
 
-    // [FIX 1] Removed 'set pm3d depthorder' which hides particles.
-    // [FIX 2] Use 'explicit' to prevent pm3d from messing with points.
+    // Use 'explicit' to prevent pm3d from interfering with points
     gp << "set pm3d explicit\n";
     gp << "set palette rgbformulae 33,13,10\n";
     gp << "unset colorbox\n";
@@ -389,11 +388,9 @@ inline void createPSOAnimationScript3D(const std::string& scriptName,
     gp << "do for [i=0:" << (max_iter-1) << "] {\n";
     gp << "    set title sprintf('" << title << " - Iter: %d', i)\n";
 
-    // [FIX 3] Draw Slices FIRST (Background), Particles SECOND (Foreground).
-    // Changed particle color to 'black' for maximum visibility.
-    // 'nocontour' ensures no lines are drawn on the heatmap slices.
+    // Draw slices first (background), then particles (foreground)
     gp << "    splot '" << slicesFile << "' u 1:2:3:4 with pm3d nocontour title '', \\\n";
-    gp << "          sprintf('" << swarmBasename << "_iter_%d.dat', i) u 1:2:3 with points pt 7 ps 1.5 lc rgb 'black' title 'Particles'\n";
+    gp << "          sprintf('" << swarmBasename << "_iter_%d.dat', i) u 1:2:3 with points pt 7 ps 1.5 lc rgb 'white' title 'Particles'\n";
 
     gp << "    pause 0.1\n";
     gp << "}\n";

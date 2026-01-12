@@ -2,7 +2,7 @@
 // Created by Giacomo Merlo on 12/01/26.
 //
 #include <omp.h>
-#include "../RngManager.hpp"
+#include "../rngManager.hpp"
 
 template <std::size_t dim>
 ImportanceEstimate<dim> ISMeanEstimator<dim>::estimate(const IntegrationDomain<dim>& domain,
@@ -26,9 +26,9 @@ ImportanceEstimate<dim> ISMeanEstimator<dim>::estimate(const IntegrationDomain<d
     #pragma omp parallel for reduction(+:sum,sum2,inside_total)
     for (int tid = 0; tid < T; ++tid){
 
-        //Tutti base sample tranne i primi che ne hanno uno in più
+        // All threads get base samples, except the first rem threads which get one more
         const int n_local = base + (tid < rem ? 1 : 0);
-        //Un rng per thread
+        // One RNG per thread
         auto rng = rngs.make_rng(tid);
 
         for (int i=0; i< n_local; ++i) {

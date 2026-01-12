@@ -5,6 +5,9 @@
 #ifndef MONTECARLO_DGL_RNGMANAGER_HPP
 #define MONTECARLO_DGL_RNGMANAGER_HPP
 
+#include <random>
+#include <cstdint>
+
 class RngManager {
 public:
     explicit RngManager(uint64_t seed) : master_seed(seed) {}

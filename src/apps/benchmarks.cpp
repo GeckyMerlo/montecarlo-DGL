@@ -5,6 +5,7 @@
 #include "apps/benchmarks.hpp"
 #include <montecarlo/utils/muParserXInterface.hpp>
 #include <cmath>
+#include <cstdint>
 
 using namespace MuParserInterface;
 
@@ -244,12 +245,10 @@ void runBenchmarksMH(bool useGnuplot) {
         return x[0]*x[0] + x[1]*x[1];
     };
 
-    std::mt19937 rng(12345);
-
     MontecarloIntegrator<2> integrator(domain);
 
     std::cout << "Running Benchmarks" << std::endl;
-    std::cout << "Metropolis Hastings result: " << integrator.integrate_with_mh(f, indicator, x0, deviation, rng, burn_in, n_samples, thinning, n_samples_volume)  << std::endl;
+    std::cout << "Metropolis Hastings result: " << integrator.integrate_with_mh(f, indicator, x0, deviation, GLOBAL_SEED, burn_in, n_samples, thinning, n_samples_volume)  << std::endl;
     std::cout << "Montecarlo result: " << integrator.integrate(f, n_samples) << std::endl;
     std::cout << "Exact result: " << 5000 * M_PI << std::endl;
 }
@@ -348,7 +347,7 @@ void runBoundaryTest(opt::PSO& pso, const opt::Coordinates& lower, const opt::Co
     // Mode is already MINIMIZE, but good practice to ensure
     pso.setMode(opt::OptimizationMode::MINIMIZE);
 
-    // Update callback for this test (less verbose, print every 20 steps)
+    // Callback to print progress
     pso.setCallback([](const opt::Solution& current_best, size_t iteration) {
         if (iteration % 20 == 0) {
             std::cout << "[Boundary Test | Step " << std::setw(3) << iteration << "] "
@@ -569,9 +568,9 @@ void runVisualPSO3DBenchmark() {
 // --- Main Optimization Benchmark Entry Point ---
 
 void runOptimizationBenchmarksPSO() {
-    std::cout << "===========================================" << std::endl;
+    std::cout << "=========================================" << std::endl;
     std::cout << "   Particle Swarm Optimization (PSO) Benchmark" << std::endl;
-    std::cout << "===========================================" << std::endl;
+    std::cout << "=========================================" << std::endl;
 
     // 1. Configuration for PSO
     opt::PSOConfig config;
@@ -614,28 +613,40 @@ void runOptimizationBenchmarksPSO() {
 // Names file frames: baseName_000.dat, baseName_001.dat, ...
 static std::string makeFrameName(const std::string& baseName, size_t iter) {
     std::ostringstream oss;
-    oss << baseName << "_" << std::setw(3) << std::setfill('0') << iter << ".dat";
+    oss << baseName << "_iter_" << iter << ".dat";
     return oss.str();
 }
 
 static void savePopulationFrame2D(const std::string& baseName, size_t iter,
                                   const std::vector<opt::GA::Individual>& pop) {
-    std::ofstream out(makeFrameName(baseName, iter));
+    std::string filename = makeFrameName(baseName, iter);
+    std::ofstream out(filename);
+    if (!out.is_open()) {
+        std::cerr << "Warning: Could not create file " << filename << std::endl;
+        return;
+    }
     for (const auto& ind : pop) {
         if (ind.genome.size() >= 2) {
             out << ind.genome[0] << " " << ind.genome[1] << "\n";
         }
     }
+    out.close();
 }
 
 static void savePopulationFrame3D(const std::string& baseName, size_t iter,
                                   const std::vector<opt::GA::Individual>& pop) {
-    std::ofstream out(makeFrameName(baseName, iter));
+    std::string filename = makeFrameName(baseName, iter);
+    std::ofstream out(filename);
+    if (!out.is_open()) {
+        std::cerr << "Warning: Could not create file " << filename << std::endl;
+        return;
+    }
     for (const auto& ind : pop) {
         if (ind.genome.size() >= 3) {
             out << ind.genome[0] << " " << ind.genome[1] << " " << ind.genome[2] << "\n";
         }
     }
+    out.close();
 }
 
 void runSphereTest(opt::GA& ga, const opt::Coordinates& lower, const opt::Coordinates& upper) {
@@ -738,10 +749,10 @@ void runRastriginTest(opt::GA& /*ga*/, int dim) {
     opt::Coordinates lower(dim, -5.12);
     opt::Coordinates upper(dim,  5.12);
 
-    // Config "hard" per GA (specchio del local_pso)
+    // Hard configuration for GA (similar to PSO's hard config)
     opt::GAConfig hard_config;
-    hard_config.population_size = 800;    // più individui = più esplorazione
-    hard_config.max_generations = 1200;   // più tempo
+    hard_config.population_size = 800;    // More individuals = more exploration
+    hard_config.max_generations = 1200;   // More time
     hard_config.tournament_k    = 4;
     hard_config.crossover_rate  = 0.90;
     hard_config.mutation_rate   = 0.15;
@@ -882,9 +893,9 @@ void runVisualGA3DBenchmark() {
 }
 
 void runOptimizationBenchmarksGA() {
-    std::cout << "===========================================" << std::endl;
+    std::cout << "=========================================" << std::endl;
     std::cout << "   Genetic Algorithm (GA) Benchmark" << std::endl;
-    std::cout << "===========================================" << std::endl;
+    std::cout << "=========================================" << std::endl;
 
     opt::GAConfig config;
     config.population_size = 80;

@@ -55,7 +55,7 @@ double MontecarloIntegrator<dim>::integrate_with_mh(
                                  const std::function<double(const geom::Point<dim>&)>& p,
                                  geom::Point<dim> x0,
                                  double deviation,
-                                 std::mt19937& rng,
+                                 uint32_t seed,
                                  std::size_t burn_in,
                                  std::size_t n_samples,
                                  std::size_t thinning,
@@ -65,10 +65,14 @@ double MontecarloIntegrator<dim>::integrate_with_mh(
     if (thinning == 0) throw std::invalid_argument("thinning must be > 0");
     if (!this->domain.isInside(x0)) throw std::invalid_argument("x0 must be inside the domain.");
 
-    // 1) stima volume |D|
+    // 1) Estimate volume |D| - VolumeEstimatorMC uses RngManager internally with different threads
     VolumeEstimatorMC<dim> ve;
-    const VolumeEstimate<dim> vol_hat = ve.estimate(this->domain, rng, n_samples_volume);
+    const VolumeEstimate<dim> vol_hat = ve.estimate(this->domain, seed, n_samples_volume);
     std::cout << "Volume estimation results: " << vol_hat.volume << " +- " << 2 * vol_hat.stderr << std::endl;
+
+    // 2) Create RNG for Metropolis-Hastings sampling (single threaded)
+    RngManager rng_mgr(seed);
+    auto rng = rng_mgr.make_rng(0);
 
 
     MetropolisHastingsSampler<dim> mh(this->domain, p, x0, deviation);
@@ -78,7 +82,7 @@ double MontecarloIntegrator<dim>::integrate_with_mh(
         (void) mh.next(rng);
     }
 
-    // campionamento con thinning
+    // Sampling with thinning
     long double sum = 0.0;
     std::size_t kept = 0;
 
