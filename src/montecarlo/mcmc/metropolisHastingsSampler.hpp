@@ -11,6 +11,7 @@
 #include <array>
 #include <random>
 #include <utility>
+#include <functional>
 
 template <size_t dim>
 class MetropolisHastingsSampler
@@ -41,7 +42,7 @@ private:
     std::uniform_real_distribution<double> uni;
 };
 
-#include "metropolis_hastings_sampler.tpp"
+#include "metropolisHastingsSampler.tpp"
 
 
 #endif //MONTECARLO_DGL_METROPOLISHASTINGSSAMPLER_HPP

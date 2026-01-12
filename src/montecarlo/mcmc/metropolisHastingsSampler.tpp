@@ -6,6 +6,8 @@
 #include <cmath>
 #include <algorithm>
 #include <limits>
+#include <functional>
+#include <stdexcept>
 
 template <size_t dim>
 MetropolisHastingsSampler<dim>::MetropolisHastingsSampler(
@@ -54,9 +56,11 @@ MetropolisHastingsSampler<dim>::next(std::mt19937& rng)
 
     double alpha = 0.0;
 
-
-    alpha = std::min(1.0, py / px);
-
+    if (!std::isfinite(px) || px <= 0.0) {
+        throw std::runtime_error("MH: target(current) must be finite and > 0.");
+    }else{
+        alpha = std::min(1.0, py / px);
+    }
 
     if (uni(rng) < alpha) {
         current = y;

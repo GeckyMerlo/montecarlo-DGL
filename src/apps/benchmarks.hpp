@@ -56,5 +56,7 @@ void runBenchmarks(bool useGnuplot);
 // executes all benchmarks on parsed function.txt's function
 void runBenchmarks(const std::string& expression,bool useGnuplot);
 
+void runBenchmarksMH(bool useGnuplot);
+
 
 #endif //MONTECARLO_1_BENCHMARKS_HPP

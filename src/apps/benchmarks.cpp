@@ -4,6 +4,7 @@
 
 #include "apps/benchmarks.hpp"
 #include <montecarlo/utils/muParserXInterface.hpp>
+#include <cmath>
 
 using namespace MuParserInterface;
 
@@ -224,8 +225,33 @@ void runBenchmarksMH(bool useGnuplot) {
     n_threads = std::thread::hardware_concurrency();
     if (n_threads == 0) n_threads = 16;
 
-    std::string title = "Function NOT implemented for MH Benchmarking";
+    Hypersphere<2> domain(10.0);
 
+    std::function<double(const geom::Point<2>&)> indicator =
+    [&domain](const geom::Point<2>& x) -> double {
+        return domain.isInside(x) ? 1.0 : 0.0;
+    };
+
+    const double deviation = 0.20;
+    const std::size_t burn_in = 20'000;
+    const std::size_t thinning = 10;
+    const std::size_t n_samples = 200'000;
+    const std::size_t n_samples_volume = 200'000;
+
+    geom::Point<2> x0;
+
+    std::function<double(const geom::Point<2>&)> f = [](const geom::Point<2>& x) -> double {
+        return x[0]*x[0] + x[1]*x[1];
+    };
+
+    std::mt19937 rng(12345);
+
+    MontecarloIntegrator<2> integrator(domain);
+
+    std::cout << "Running Benchmarks" << std::endl;
+    std::cout << "Metropolis Hastings result: " << integrator.integrate_with_mh(f, indicator, x0, deviation, rng, burn_in, n_samples, thinning, n_samples_volume)  << std::endl;
+    std::cout << "Montecarlo result: " << integrator.integrate(f, n_samples) << std::endl;
+    std::cout << "Exact result: " << 5000 * M_PI << std::endl;
 }
 
 void runBenchmarks(const std::string& expression, bool useGnuplot) {
