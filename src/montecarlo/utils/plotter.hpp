@@ -11,6 +11,7 @@
 #include <sstream>
 #include <vector>
 #include <cstdlib> // std::system
+#include <filesystem>
 #include "../domains/integration_domain.hpp"
 
 /**
@@ -220,7 +221,19 @@ template <typename Func>
 inline void saveFunctionGrid(const std::string& filename, const Func& func,
                              double x_min, double x_max, double y_min, double y_max,
                              int resolution = 100) {
-    std::ofstream out(filename);
+    // Extract directory from filename
+    std::string dir = "./pso_frames";
+    if (filename.find("ga_") != std::string::npos) {
+        dir = "./ga_frames";
+    }
+    
+    // Create directory if it doesn't exist
+    try {
+        std::filesystem::create_directories(dir);
+    } catch (const std::exception&) {}
+    
+    std::string fullpath = dir + "/" + filename;
+    std::ofstream out(fullpath);
     if (!out.is_open()) return;
 
     double dx = (x_max - x_min) / resolution;
@@ -246,7 +259,18 @@ inline void saveFunctionGrid(const std::string& filename, const Func& func,
  */
 template <typename ParticleT>
 inline void saveSwarmFrame(const std::string& basename, size_t iteration, const std::vector<ParticleT>& swarm) {
-    std::string filename = basename + "_iter_" + std::to_string(iteration) + ".dat";
+    // Determine directory based on basename
+    std::string dir = "./pso_frames";
+    if (basename.find("ga_") != std::string::npos) {
+        dir = "./ga_frames";
+    }
+    
+    // Create directory if it doesn't exist
+    try {
+        std::filesystem::create_directories(dir);
+    } catch (const std::exception&) {}
+    
+    std::string filename = dir + "/" + basename + "_iter_" + std::to_string(iteration) + ".dat";
     std::ofstream out(filename);
     if (!out.is_open()) return;
 
@@ -271,6 +295,12 @@ inline void createPSOAnimationScript(const std::string& scriptName,
                                      const std::string& swarmBasename,
                                      size_t max_iter,
                                      const std::string& title) {
+    // Determine directory based on swarmBasename
+    std::string dir = "./pso_frames";
+    if (swarmBasename.find("ga_") != std::string::npos) {
+        dir = "./ga_frames";
+    }
+    
     std::ofstream gp(scriptName);
     if (!gp.is_open()) return;
 
@@ -285,8 +315,8 @@ inline void createPSOAnimationScript(const std::string& scriptName,
     // Gnuplot Loop for Animation
     gp << "do for [i=0:" << (max_iter-1) << "] {\n";
     gp << "    set title sprintf('" << title << " - Iter: %d', i)\n";
-    gp << "    plot '" << gridFile << "' with image, \\\n";
-    gp << "         sprintf('" << swarmBasename << "_iter_%d.dat', i) u 1:2 with points pt 7 ps 1.5 lc rgb 'white'\n";
+    gp << "    plot '" << dir << "/" << gridFile << "' with image, \\\n";
+    gp << "         sprintf('" << dir << "/" << swarmBasename << "_iter_%d.dat', i) u 1:2 with points pt 7 ps 1.5 lc rgb 'white'\n";
     gp << "    pause 0.1\n"; // Delay between frames (0.1 seconds)
     gp << "}\n";
     gp << "pause mouse close\n"; // Keep window open until clicked
@@ -305,7 +335,19 @@ inline void createPSOAnimationScript(const std::string& scriptName,
 template <typename Func>
 inline void saveFunctionSlices3D(const std::string& filename, const Func& func,
                                  double min, double max, int resolution = 50) {
-    std::ofstream out(filename);
+    // Extract directory from filename
+    std::string dir = "./pso_frames";
+    if (filename.find("ga_") != std::string::npos) {
+        dir = "./ga_frames";
+    }
+    
+    // Create directory if it doesn't exist
+    try {
+        std::filesystem::create_directories(dir);
+    } catch (const std::exception&) {}
+    
+    std::string fullpath = dir + "/" + filename;
+    std::ofstream out(fullpath);
     if (!out.is_open()) return;
 
     double step = (max - min) / resolution;
@@ -354,6 +396,7 @@ inline void saveFunctionSlices3D(const std::string& filename, const Func& func,
 /**
  * 6. CREATE 3D ANIMATION SCRIPT
  * Generates a Gnuplot script for a 3D scatter plot overlaid on function slices.
+ * Automatically detects PSO vs GA and saves to appropriate subdirectory.
  */
 inline void createPSOAnimationScript3D(const std::string& scriptName,
                                        const std::string& slicesFile,
@@ -361,6 +404,23 @@ inline void createPSOAnimationScript3D(const std::string& scriptName,
                                        size_t max_iter,
                                        const std::string& title,
                                        double min_bound, double max_bound) {
+    // Determine subdirectory based on filename
+    std::string dir = "pso_frames";
+    if (swarmBasename.find("ga_") != std::string::npos) {
+        dir = "ga_frames";
+    }
+    
+    // Ensure subdirectory exists
+    try {
+        std::filesystem::create_directories(dir);
+    } catch (const std::exception& e) {
+        std::cerr << "Error creating directory " << dir << ": " << e.what() << std::endl;
+    }
+    
+    // Prepend directory to file paths
+    std::string fullSlicesFile = dir + "/" + slicesFile;
+    std::string fullSwarmBasename = dir + "/" + swarmBasename;
+    
     std::ofstream gp(scriptName);
     if (!gp.is_open()) return;
 
@@ -389,8 +449,8 @@ inline void createPSOAnimationScript3D(const std::string& scriptName,
     gp << "    set title sprintf('" << title << " - Iter: %d', i)\n";
 
     // Draw slices first (background), then particles (foreground)
-    gp << "    splot '" << slicesFile << "' u 1:2:3:4 with pm3d nocontour title '', \\\n";
-    gp << "          sprintf('" << swarmBasename << "_iter_%d.dat', i) u 1:2:3 with points pt 7 ps 1.5 lc rgb 'white' title 'Particles'\n";
+    gp << "    splot '" << fullSlicesFile << "' u 1:2:3:4 with pm3d nocontour title '', \\\n";
+    gp << "          sprintf('" << fullSwarmBasename << "_iter_%d.dat', i) u 1:2:3 with points pt 7 ps 1.5 lc rgb 'white' title 'Particles'\n";
 
     gp << "    pause 0.1\n";
     gp << "}\n";
@@ -404,6 +464,49 @@ inline void createPSOAnimationScript3D(const std::string& scriptName,
     if (ret != 0) {
         std::cerr << "GNUPLOT ERROR (Code " << ret << "): Ensure gnuplot is installed." << std::endl;
     }
+}
+
+/**
+ * 7. CREATE DRONE GEOMETRY VISUALIZATION SCRIPT
+ * Generates a Gnuplot script to visualize the exported drone domain geometry.
+ * The geometry file should have format: point_type x y z
+ */
+inline void createDroneVisualizationScript(const std::string& scriptName,
+                                          const std::string& geometryFile,
+                                          const std::string& title = "Drone Arm Domain Geometry") {
+    std::ofstream gp(scriptName);
+    if (!gp.is_open()) {
+        std::cerr << "Could not create gnuplot script: " << scriptName << std::endl;
+        return;
+    }
+
+    gp << "#!/usr/bin/gnuplot\n";
+    gp << "# Visualization script for drone arm domain geometry\n";
+    gp << "# Auto-generated by drone_optimization\n\n";
+    
+    gp << "set title '" << title << "'\n";
+    gp << "set xlabel 'X'\n";
+    gp << "set ylabel 'Y'\n";
+    gp << "set zlabel 'Z'\n";
+    
+    gp << "# Equal aspect ratio to prevent distortion\n";
+    gp << "set view equal xyz\n";
+    gp << "set view 60, 30\n";
+    gp << "set grid\n\n";
+    
+    gp << "# Data file location\n";
+    gp << "datafile = '" << geometryFile << "'\n\n";
+    
+    gp << "# Plot arm (blue) and motor (red) with smaller points for volume effect\n";
+    // Use stringcolumn(1) since column 1 contains strings (arm/motor)
+    gp << "splot datafile u (stringcolumn(1) eq \"arm\" ? $2 : 1/0):3:4 with points pt 7 ps 0.5 lc rgb '#3366cc' title 'Arm', \\\n";
+    gp << "      datafile u (stringcolumn(1) eq \"motor\" ? $2 : 1/0):3:4 with points pt 7 ps 0.5 lc rgb '#dc3912' title 'Motor'\n\n";
+    
+    gp << "pause mouse close\n";
+    gp.close();
+    
+    std::cout << "Gnuplot visualization script created: " << scriptName << std::endl;
+    std::cout << "To visualize: gnuplot -persist " << scriptName << std::endl;
 }
 
 

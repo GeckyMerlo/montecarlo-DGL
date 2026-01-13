@@ -1,13 +1,12 @@
-# Montecarlo
-Montecarlo Integration  
+# Montecarlo Integration
 This project implements a Monte Carlo integration algorithm in C++ to calculate definite integrals over N-dimensional hyperspheres and hyperrectangles. The software can use the **muParserX** library to parse mathematical functions at runtime.
 
 ## ⚙️ Run Modes
 
-The program offers six different run modes, each designed for specific use cases:
+The project offers several run modes, divided into two main executables (`montecarlo_1` for benchmarks/tests and `drone_optimization` for the specific application):
 
 ### Mode 1: Parser-Based Integration (Function from File)
-Uses the mathematical expression from `function.txt` via the **muParserX** library.
+*Executable: `montecarlo_1`* Uses the mathematical expression from `function.txt` via the **muParserX** library.
 
 **Use case:** When you want to test custom functions without recompiling.  
 **Performance:** Slower due to runtime parsing overhead.  
@@ -16,7 +15,7 @@ Uses the mathematical expression from `function.txt` via the **muParserX** libra
 **How it works:** The parser reads your function expression and performs Monte Carlo integration using uniform sampling over various geometric domains (hypersphere, hyperrectangle, hypercylinder, etc.).
 
 ### Mode 2: Hardcoded Integration (Uniform Distribution)
-Uses pre-compiled C++ lambda functions with standard uniform Monte Carlo sampling.
+*Executable: `montecarlo_1`* Uses pre-compiled C++ lambda functions with standard uniform Monte Carlo sampling.
 
 **Use case:** When performance is critical and you're working with fixed functions.  
 **Performance:** Fast (no parsing overhead).  
@@ -25,7 +24,7 @@ Uses pre-compiled C++ lambda functions with standard uniform Monte Carlo samplin
 **How it works:** Executes integration benchmarks across multiple domains using hardcoded test functions with the classic Monte Carlo estimator.
 
 ### Mode 3: Hardcoded Integration (Metropolis-Hastings)
-Uses pre-compiled C++ lambda functions with Metropolis-Hastings MCMC sampling.
+*Executable: `montecarlo_1`* Uses pre-compiled C++ lambda functions with Metropolis-Hastings MCMC sampling.
 
 **Use case:** For complex or high-dimensional domains where uniform sampling is inefficient.  
 **Performance:** Fast, with better convergence for difficult geometries.  
@@ -34,7 +33,7 @@ Uses pre-compiled C++ lambda functions with Metropolis-Hastings MCMC sampling.
 **How it works:** Combines volume estimation (Hit-or-Miss) with MH sampling to explore the domain more efficiently, especially useful when the domain has complex boundaries.
 
 ### Mode 4: Polytope Integration (Convex Hull)
-Integrates over arbitrary convex polytopes defined by user-provided points.
+*Executable: `montecarlo_1`* Integrates over arbitrary convex polytopes defined by user-provided points.
 
 **Use case:** When your integration domain is a convex polytope (e.g., polyhedron in 3D).  
 **Performance:** Depends on polytope complexity.  
@@ -43,7 +42,7 @@ Integrates over arbitrary convex polytopes defined by user-provided points.
 **How it works:** Reads vertex coordinates from `points.txt` and facet normals/offsets from `hull.txt` (generated via Qhull). Performs Monte Carlo integration over the resulting convex polytope using the half-space representation.
 
 ### Mode 5: Particle Swarm Optimization (PSO)
-Runs optimization benchmarks using the Particle Swarm Optimization algorithm.
+*Executable: `montecarlo_1`* Runs optimization benchmarks using the Particle Swarm Optimization algorithm.
 
 **Use case:** Finding global minima/maxima of continuous functions.  
 **Performance:** Good for smooth, continuous optimization landscapes.  
@@ -52,7 +51,7 @@ Runs optimization benchmarks using the Particle Swarm Optimization algorithm.
 **How it works:** Initializes a swarm of particles that explore the search space, updating positions based on their own best solutions and the global best. Tests on standard benchmark functions (Rastrigin, Rosenbrock, etc.).
 
 ### Mode 6: Genetic Algorithm (GA)
-Runs optimization benchmarks using a Genetic Algorithm.
+*Executable: `montecarlo_1`* Runs optimization benchmarks using a Genetic Algorithm.
 
 **Use case:** Finding global minima/maxima, especially for non-smooth or discrete problems.  
 **Performance:** Robust for complex fitness landscapes.  
@@ -60,11 +59,64 @@ Runs optimization benchmarks using a Genetic Algorithm.
 
 **How it works:** Evolves a population of candidate solutions through selection, crossover, and mutation operators. Tests on standard benchmark functions to measure convergence and solution quality.
 
----
+### Mode 7: Drone Arm Center of Mass Optimization
+*Executable: `drone_optimization`* Specialized application combining Monte Carlo integration with PSO for geometric optimization.
+
+**Use case:** Optimizing hole placement and size in a drone arm to achieve target center of mass.  
+**Performance:** Parallelized PSO with OpenMP for efficient multi-core execution.  
+**Output:** High-precision verification with 1M samples, auto-generated 3D visualization script.
+
+**How it works:** 
+- Defines a complex 3D domain (rectangular arm + cylindrical motor + optional polytope cabin)
+- Uses PSO to find optimal hole position [x, y, z] and radius that shifts center of mass to target (1.0, 0, 0)
+- Fast optimization with 20,000 samples, followed by high-precision verification with 1,000,000 samples
+- Exports sampled geometry to `drone_frames/drone_domain.txt`
+- Auto-generates `visualize_drone.gp` script for immediate 3D visualization
+- Parallelized particle evaluation with thread-safe RNG management
+
+**Key Findings:**  
+The optimization successfully balances the drone arm (Target X: 1.0, Result X: ~0.99) within the physical constraints of the geometry. Crucially, the **Hybrid Verification** (Monte Carlo Baseline - Analytic Hole) matches the pure Monte Carlo re-verification with a delta of **< 0.1%**, confirming the high fidelity and robustness of the stochastic solver.
+
+**Visualization:**  
+After running, the script automatically generates `visualize_drone.gp`:
+```bash
+gnuplot -persist visualize_drone.gp  # Visualize the drone geometry
+```
+
+**Images of the domain:**  
+*(Note: The images below are from a similar simulation setup to clearly illustrate the hole placement; specific dimensions in the current build may vary slightly.)*
+
+<p float="left">
+<img src="drone_assets/drone_domain_view.png" width="48%" alt="Drone domain view" />
+<img src="drone_assets/drone_domain_hole.png" width="48%" alt="Drone domain hole detail" />
+</p>
+
+**Command line:**
+```bash
+./drone_optimization [seed] [num_threads]
+```
+- `seed`: Random seed (optional, default: 12345; use `-` to keep default when specifying threads)
+- `num_threads`: Number of threads (optional, default: max available; 0 = sequential for performance comparison)
+
+**Examples:**
+```bash
+./drone_optimization                 # Run with default seed and max threads
+./drone_optimization 42 4            # Run with seed 42 using 4 threads
+./drone_optimization - 4             # Run with default seed using 4 threads
+./drone_optimization 42 0            # Run with seed 42 sequentially (single thread)
+```
 
 ### General Notes
 - **Seed Control:** You can specify a custom random seed by running: `./montecarlo_1 <seed>`
-- **Gnuplot Visualization:** Available for integration modes 1-3 in dimensions 1D, 2D, and 3D only.
+- **Parallelization:** PSO and drone_optimization support OpenMP parallelization. Control with:
+  - `./montecarlo_1 <seed> <num_threads>` for montecarlo_1
+  - `./drone_optimization [seed|-] [num_threads]` for drone optimization
+  - Use `0` for sequential execution, `N > 0` for N threads
+  - Use `-` as seed placeholder to keep default seed when specifying threads
+- **Output Organization:** Files are automatically saved to subdirectories (e.g., `drone_frames/` for the drone geometry outputs).
+- **Visualization:**
+  - Benchmark animations: `gnuplot run_pso.gp`, `run_pso_3d.gp`, `run_ga.gp`, `run_ga_3d.gp`
+  - Drone geometry: `gnuplot -persist visualize_drone.gp` (auto-generated after running drone_optimization)
 - **Closing Plots:** To close all gnuplot windows, run:
   ```bash
   pkill -f gnuplot

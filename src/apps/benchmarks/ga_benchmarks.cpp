@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <sstream>
+#include <filesystem>
 
 namespace opt = optimizers;
 
@@ -20,7 +21,13 @@ static std::string makeFrameName(const std::string& baseName, size_t iter) {
 
 static void savePopulationFrame2D(const std::string& baseName, size_t iter,
                                   const std::vector<opt::GA::Individual>& pop) {
-    std::string filename = makeFrameName(baseName, iter);
+    // Create ga_frames subdirectory
+    std::string dir = "./ga_frames";
+    try {
+        std::filesystem::create_directories(dir);
+    } catch (const std::exception&) {}
+    
+    std::string filename = dir + "/" + makeFrameName(baseName, iter);
     std::ofstream out(filename);
     if (!out.is_open()) {
         std::cerr << "Warning: Could not create file " << filename << std::endl;
@@ -36,7 +43,13 @@ static void savePopulationFrame2D(const std::string& baseName, size_t iter,
 
 static void savePopulationFrame3D(const std::string& baseName, size_t iter,
                                   const std::vector<opt::GA::Individual>& pop) {
-    std::string filename = makeFrameName(baseName, iter);
+    // Create ga_frames subdirectory
+    std::string dir = "./ga_frames";
+    try {
+        std::filesystem::create_directories(dir);
+    } catch (const std::exception&) {}
+    
+    std::string filename = dir + "/" + makeFrameName(baseName, iter);
     std::ofstream out(filename);
     if (!out.is_open()) {
         std::cerr << "Warning: Could not create file " << filename << std::endl;
