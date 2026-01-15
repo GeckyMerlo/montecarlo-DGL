@@ -3,6 +3,7 @@
 //
 
 #include "apps/benchmarks.hpp"
+#include <montecarlo/integrators/ISintegrator.hpp>
 #include <montecarlo/utils/muParserXInterface.hpp>
 #include <cmath>
 #include <cstdint>
@@ -29,6 +30,8 @@ void executeBenchmark(const std::string& title,
 
     std::vector<results> testResults;
 
+	ISMontecarloIntegrator<dim> isIntegrator(domain);
+
     for (size_t n_i : n_samples_vector) {
         auto startTimer = std::chrono::high_resolution_clock::now();
 
@@ -41,7 +44,7 @@ void executeBenchmark(const std::string& title,
         auto startTimer2 = std::chrono::high_resolution_clock::now();
 
         // 1. Integration (Data points are written to rawDataFile by the integrator)
-        double result2 = integrator.integrate_importance(f, n_i, UniformProposal<dim>(domain), 12345);
+        double result2 = isIntegrator.integrate(f, n_i, UniformProposal<dim>(domain), 12345);
 
         auto endTimer2 = std::chrono::high_resolution_clock::now();
         auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer2 - startTimer2);
@@ -216,9 +219,20 @@ void runBenchmarksMH(bool useGnuplot) {
     };
 
     MontecarloIntegrator<2> integrator(domain);
+	MHMontecarloIntegrator<2> mhintegrator(domain);
+ 	UniformProposal<2> dummy_proposal(domain);
+
+	mhintegrator.setConfig(
+        burn_in,
+        thinning,
+        n_samples_volume,
+        deviation,
+        indicator,
+        x0
+    );
 
     std::cout << "Running Benchmarks" << std::endl;
-    std::cout << "Metropolis Hastings result: " << integrator.integrate_with_mh(f, indicator, x0, deviation, GLOBAL_SEED, burn_in, n_samples, thinning, n_samples_volume)  << std::endl;
+    std::cout << "Metropolis Hastings result: " << mhintegrator.integrate(f, static_cast<int>(n_samples), dummy_proposal, GLOBAL_SEED) << std::endl;
     std::cout << "Montecarlo result: " << integrator.OLDintegrate(f, n_samples) << std::endl;
     std::cout << "Exact result: " << 5000 * M_PI << std::endl;
 }

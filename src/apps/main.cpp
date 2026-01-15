@@ -24,7 +24,7 @@
 
 #include "apps/benchmarks.hpp"
 #include <montecarlo/utils/plotter.hpp>
-#include <montecarlo/integrators/montecarlo_integrator.hpp>
+#include <montecarlo/integrators/MCintegrator.hpp>
 #include <montecarlo/domains/polytope.hpp>
 #include <montecarlo/geometry.hpp>
 

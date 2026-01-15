@@ -9,7 +9,9 @@
 #include <montecarlo/domains/hyperrectangle.hpp>
 #include <montecarlo/domains/hypersphere.hpp>
 #include <montecarlo/geometry.hpp>
-#include <montecarlo/integrators/montecarlo_integrator.hpp>
+#include <montecarlo/integrators/MCintegrator.hpp>
+#include <montecarlo/integrators/MHintegrator.hpp>
+#include <montecarlo/integrators/ISintegrator.hpp>
 #include <montecarlo/proposals/uniformProposal.hpp>
 #include <montecarlo/utils/plotter.hpp>
 #include <montecarlo/optimizers/PSO.hpp>

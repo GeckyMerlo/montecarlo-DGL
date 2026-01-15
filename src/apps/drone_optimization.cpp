@@ -46,7 +46,7 @@
 #include "../montecarlo/RngManager.hpp"
 
 #include "../montecarlo/geometry.hpp"
-#include "../montecarlo/integrators/montecarlo_integrator.hpp"
+#include "../montecarlo/integrators/MCintegrator.hpp"
 #include "../montecarlo/domains/hyperrectangle.hpp"
 #include "../montecarlo/domains/hypersphere.hpp"
 #include "../montecarlo/domains/hypercylinder.hpp"
