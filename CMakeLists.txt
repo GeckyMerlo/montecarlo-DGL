@@ -27,6 +27,10 @@ add_executable(drone_optimization
         src/apps/drone_optimization.cpp
 )
 
+add_executable(drone_optimization_ellipsoid_strength 
+        src/apps/drone_optimization_ellipsoid_strength.cpp
+)
+
 add_library(montecarlo_optimizers
         src/montecarlo/optimizers/PSO.cpp
         src/montecarlo/optimizers/GA.cpp
@@ -38,6 +42,10 @@ target_include_directories(montecarlo_1 PRIVATE
 )
 
 target_include_directories(drone_optimization PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_include_directories(drone_optimization_ellipsoid_strength PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
@@ -57,6 +65,15 @@ target_link_libraries(montecarlo_1 PRIVATE
 )
 
 target_link_libraries(drone_optimization PRIVATE
+        OpenMP::OpenMP_CXX
+        montecarlo_optimizers
+        Boost::iostreams
+        Boost::filesystem
+        Boost::system
+        muparserx
+)
+
+target_link_libraries(drone_optimization_ellipsoid_strength PRIVATE
         OpenMP::OpenMP_CXX
         montecarlo_optimizers
         Boost::iostreams
