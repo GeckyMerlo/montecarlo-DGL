@@ -3,11 +3,12 @@
  * @brief Drone arm CM targeting + vertical bending-stress proxy with an ellipsoidal hole.
  *
  * @details
- * This example is deliberately designed to benefit from your library stack:
- * - Complex 3D domain with fast inside-tests (CSG union): arm + motor + optional cabin polytope
+ * This example demonstrates the full power of the Monte Carlo library stack:
+ * - Complex 3D domain with CSG union (arm + motor + optional cabin polytope)
  * - Stochastic objective via Monte Carlo integration (mass, CM, second-moment proxies)
- * - Deterministic parameter-based seeding to make MC noise stationary (crucial for PSO/GA)
- * - Non-smooth constraints handled by penalties (hole must remain inside the body, etc.)
+ * - Deterministic parameter-based seeding via RngManager for reproducible MC noise
+ * - Non-smooth constraints handled by penalties (hole must remain inside the body)
+ * - Comparison of PSO vs GA optimization strategies
  *
  * Optimization variables (ellipsoidal hole):
  *   params = [hx, hy, hz, a, b, c, yaw, pitch, roll]
@@ -20,16 +21,7 @@
  * Scalar objective (single-objective optimization):
  *   f = w_cm * cm_error + w_sigma * sigma_proxy + penalties
  *
- * Notes:
- * - This is NOT FEM; sigma_proxy is a formal, lightweight surrogate:
- *     sigma_proxy ~ (M_max * c) / I_proxy
- *   where M_max = F * L, c ~ arm_height/2, and I_proxy is estimated from MC via Var(z).
- *
- * - "Hole inside body" is enforced by a surface sampling check of the ellipsoid; violations are penalized.
- *
- * Outputs:
- * - Best solution from PSO and GA (fast metrics + high-precision verification)
- * - Optional geometry export for visualization (points outside the hole)
+ * @see PSO, GA, MontecarloIntegrator, MCMeanEstimator, VolumeEstimatorMC, RngManager
  */
 
 #include <iostream>
@@ -43,63 +35,73 @@
 #include <functional>
 #include <stdexcept>
 #include <algorithm>
+#include <memory>
+#include <fstream>
+#include <filesystem>
 
 #include <omp.h>
-#include <filesystem>
-#include <fstream>
 
+// Library headers
 #include "../montecarlo/geometry.hpp"
-#include "../montecarlo/integrators/montecarlo_integrator.hpp"
+#include "../montecarlo/RngManager.hpp"
+#include "../montecarlo/domains/integration_domain.hpp"
 #include "../montecarlo/domains/hyperrectangle.hpp"
 #include "../montecarlo/domains/hypercylinder.hpp"
 #include "../montecarlo/domains/polytope.hpp"
-
+#include "../montecarlo/integrators/MCintegrator.hpp"
+#include "../montecarlo/estimators/VolumeEstimatorMC.hpp"
+#include "../montecarlo/estimators/MCMeanEstimator.hpp"
+#include "../montecarlo/proposals/uniformProposal.hpp"
 #include "../montecarlo/optimizers/PSO.hpp"
 #include "../montecarlo/optimizers/GA.hpp"
+#include "../montecarlo/utils/plotter.hpp"
 
 using namespace geom;
 using namespace optimizers;
 
-/// Global seed for deterministic behavior (also used by optimizers via extern if needed)
+/// Global seed for deterministic behavior (also used by optimizers)
 uint32_t GLOBAL_SEED = 12345;
 
 /// Problem geometry dimension
 constexpr size_t DIM = 3;
 
 // =====================================================================================
-// 0) Helpers: deterministic hashing, basic linear algebra, safe clamps
+// 0) Helpers: deterministic hashing, 3x3 matrix algebra for ellipsoid rotation
 // =====================================================================================
 
-static uint32_t hash_params(const std::vector<double>& params) {
+/**
+ * @brief Deterministic hash of parameter vector for reproducible MC noise.
+ * @details Ensures that identical parameters produce identical random sequences,
+ *          making the stochastic objective function stationary for PSO/GA.
+ */
+static uint32_t hashParams(const Coordinates& params) {
     uint32_t seed = 0;
     std::hash<double> hasher;
-    for (double p : params) {
+    for (const auto& p : params) {
         seed ^= static_cast<uint32_t>(hasher(p)) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
     }
     return seed;
 }
 
-static double clamp01(double x) {
-    if (x < 0.0) return 0.0;
-    if (x > 1.0) return 1.0;
-    return x;
-}
-
+/// 3x3 matrix for rotation operations
 struct Mat3 {
     double m[3][3]{};
 };
 
-static Mat3 mul(const Mat3& A, const Mat3& B) {
+/// Matrix multiplication: C = A * B
+static Mat3 matMul(const Mat3& A, const Mat3& B) {
     Mat3 C;
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j) {
             C.m[i][j] = 0.0;
-            for (int k = 0; k < 3; ++k) C.m[i][j] += A.m[i][k] * B.m[k][j];
+            for (int k = 0; k < 3; ++k) 
+                C.m[i][j] += A.m[i][k] * B.m[k][j];
         }
     return C;
 }
 
-static Mat3 transpose(const Mat3& A) {
+/// Matrix transpose
+static Mat3 matTranspose(const Mat3& A) {
     Mat3 T;
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
@@ -107,21 +109,23 @@ static Mat3 transpose(const Mat3& A) {
     return T;
 }
 
-static std::array<double,3> mat_vec(const Mat3& A, const std::array<double,3>& v) {
-    std::array<double,3> r{};
-    for (int i = 0; i < 3; ++i) {
-        r[i] = A.m[i][0]*v[0] + A.m[i][1]*v[1] + A.m[i][2]*v[2];
-    }
-    return r;
+/// Matrix-vector multiplication: result = A * v
+static std::array<double, 3> matVec(const Mat3& A, const std::array<double, 3>& v) {
+    return {
+        A.m[0][0]*v[0] + A.m[0][1]*v[1] + A.m[0][2]*v[2],
+        A.m[1][0]*v[0] + A.m[1][1]*v[1] + A.m[1][2]*v[2],
+        A.m[2][0]*v[0] + A.m[2][1]*v[1] + A.m[2][2]*v[2]
+    };
 }
 
 /**
- * @brief Build rotation matrix from yaw/pitch/roll (Z-Y-X convention).
- * yaw   = rotation around Z
- * pitch = rotation around Y
- * roll  = rotation around X
+ * @brief Build rotation matrix from Euler angles (Z-Y-X convention).
+ * @param yaw   Rotation around Z axis
+ * @param pitch Rotation around Y axis
+ * @param roll  Rotation around X axis
+ * @return Combined rotation matrix R = Rz * Ry * Rx
  */
-static Mat3 rot_zyx(double yaw, double pitch, double roll) {
+static Mat3 rotationZYX(double yaw, double pitch, double roll) {
     const double cy = std::cos(yaw),   sy = std::sin(yaw);
     const double cp = std::cos(pitch), sp = std::sin(pitch);
     const double cr = std::cos(roll),  sr = std::sin(roll);
@@ -130,76 +134,78 @@ static Mat3 rot_zyx(double yaw, double pitch, double roll) {
     Mat3 Ry{{ {cp, 0.0, sp},  {0.0, 1.0, 0.0}, {-sp, 0.0, cp} }};
     Mat3 Rx{{ {1.0, 0.0, 0.0}, {0.0, cr, -sr}, {0.0, sr, cr} }};
 
-    return mul(mul(Rz, Ry), Rx);
+    return matMul(matMul(Rz, Ry), Rx);
 }
 
-struct EllipsoidFast {
-    double hx, hy, hz;           // center
-    double inv_a2, inv_b2, inv_c2; // 1/a^2, 1/b^2, 1/c^2
-    Mat3 Rt;                     // R^T
+/**
+ * @brief Precomputed ellipsoid data for fast inside-tests.
+ * @details Stores inverse squared semi-axes and transposed rotation matrix
+ *          to avoid recomputation during millions of point tests.
+ */
+struct EllipsoidCache {
+    double hx, hy, hz;               // Ellipsoid center
+    double inv_a2, inv_b2, inv_c2;   // 1/a², 1/b², 1/c²
+    Mat3 Rt;                         // R^T (transpose of rotation)
 };
 
-// Build once per evaluation
-static inline EllipsoidFast makeEllipsoidFast(const std::vector<double>& params) {
-    EllipsoidFast E;
-    E.hx = params[0]; E.hy = params[1]; E.hz = params[2];
+/// Build ellipsoid cache from parameter vector
+static EllipsoidCache buildEllipsoidCache(const Coordinates& params) {
+    EllipsoidCache E;
+    E.hx = params[0]; 
+    E.hy = params[1]; 
+    E.hz = params[2];
 
     const double a = params[3], b = params[4], c = params[5];
-    // (Assume checked > 0 elsewhere)
-    E.inv_a2 = 1.0 / (a*a);
-    E.inv_b2 = 1.0 / (b*b);
-    E.inv_c2 = 1.0 / (c*c);
+    E.inv_a2 = 1.0 / (a * a);
+    E.inv_b2 = 1.0 / (b * b);
+    E.inv_c2 = 1.0 / (c * c);
 
-    const double yaw = params[6], pitch = params[7], roll = params[8];
-    E.Rt = transpose(rot_zyx(yaw, pitch, roll));
+    E.Rt = matTranspose(rotationZYX(params[6], params[7], params[8]));
     return E;
 }
 
-static inline bool isInsideEllipsoidFast(const Point<3>& p, const EllipsoidFast& E) {
+/// Fast ellipsoid inside-test using precomputed cache
+static inline bool isInsideEllipsoid(const Point<DIM>& p, const EllipsoidCache& E) {
     const double dx = p[0] - E.hx;
     const double dy = p[1] - E.hy;
     const double dz = p[2] - E.hz;
 
-    // q = Rt * d
+    // Transform to ellipsoid local coords: q = R^T * (p - center)
     const double qx = E.Rt.m[0][0]*dx + E.Rt.m[0][1]*dy + E.Rt.m[0][2]*dz;
     const double qy = E.Rt.m[1][0]*dx + E.Rt.m[1][1]*dy + E.Rt.m[1][2]*dz;
     const double qz = E.Rt.m[2][0]*dx + E.Rt.m[2][1]*dy + E.Rt.m[2][2]*dz;
 
-    const double u = (qx*qx)*E.inv_a2 + (qy*qy)*E.inv_b2 + (qz*qz)*E.inv_c2;
+    // Ellipsoid equation: (qx/a)² + (qy/b)² + (qz/c)² ≤ 1
+    const double u = qx*qx*E.inv_a2 + qy*qy*E.inv_b2 + qz*qz*E.inv_c2;
     return u <= 1.0;
 }
 
 // =====================================================================================
-// 1) Optional PolyTope readers (same structure as your original example)
+// 1) PolyTope file readers (cabin geometry)
 // =====================================================================================
 
 template <int dim>
-static std::vector<geom::Point<dim>> read_points_from_file_drone(const std::string& filename) {
+static std::vector<Point<dim>> readPointsFromFile(const std::string& filename) {
     std::ifstream in(filename);
-    if (!in.is_open()) throw std::runtime_error("Cannot open file: " + filename);
+    if (!in.is_open()) 
+        throw std::runtime_error("Cannot open file: " + filename);
 
-    std::size_t num_points = 0;
-    std::size_t file_dim   = 0;
+    std::size_t num_points = 0, file_dim = 0;
     in >> num_points >> file_dim;
-    if (!in.good()) throw std::runtime_error("Error reading header from file: " + filename);
+    if (!in.good()) 
+        throw std::runtime_error("Error reading header from: " + filename);
 
-    if (file_dim != static_cast<std::size_t>(dim)) {
-        throw std::runtime_error(
-            "Dimension mismatch: file has dim = " + std::to_string(file_dim) +
-            " but template expects dim = " + std::to_string(dim));
-    }
+    if (file_dim != static_cast<std::size_t>(dim))
+        throw std::runtime_error("Dimension mismatch in " + filename);
 
-    std::vector<geom::Point<dim>> points;
+    std::vector<Point<dim>> points;
     points.reserve(num_points);
 
     for (std::size_t i = 0; i < num_points; ++i) {
-        geom::Point<dim> p;
+        Point<dim> p;
         for (int k = 0; k < dim; ++k) {
-            if (!(in >> p[k])) {
-                throw std::runtime_error(
-                    "Error reading coordinate " + std::to_string(k) +
-                    " of point " + std::to_string(i) + " from file: " + filename);
-            }
+            if (!(in >> p[k]))
+                throw std::runtime_error("Error reading point " + std::to_string(i) + " from " + filename);
         }
         points.push_back(p);
     }
@@ -207,24 +213,20 @@ static std::vector<geom::Point<dim>> read_points_from_file_drone(const std::stri
 }
 
 template <int dim>
-static void read_normals_and_offsets_from_file_drone(
-    const std::string& filename,
-    std::vector<std::array<double, dim>>& normals,
-    std::vector<double>& offsets)
-{
+static void readNormalsAndOffsets(const std::string& filename,
+                                   std::vector<std::array<double, dim>>& normals,
+                                   std::vector<double>& offsets) {
     std::ifstream in(filename);
-    if (!in.is_open()) throw std::runtime_error("Cannot open normals file: " + filename);
+    if (!in.is_open()) 
+        throw std::runtime_error("Cannot open normals file: " + filename);
 
-    std::size_t file_dim = 0;
-    std::size_t num_facets = 0;
+    std::size_t file_dim = 0, num_facets = 0;
     in >> file_dim >> num_facets;
-    if (!in.good()) throw std::runtime_error("Error reading header (dim, num_facets) from: " + filename);
+    if (!in.good()) 
+        throw std::runtime_error("Error reading header from: " + filename);
 
-    if (file_dim != static_cast<std::size_t>(dim + 1)) {
-        throw std::runtime_error(
-            "Dimension mismatch in normals file: file has dim = " + std::to_string(file_dim) +
-            " but template expects dim+1 = " + std::to_string(dim + 1));
-    }
+    if (file_dim != static_cast<std::size_t>(dim + 1))
+        throw std::runtime_error("Dimension mismatch in normals file: " + filename);
 
     normals.clear();
     offsets.clear();
@@ -235,58 +237,63 @@ static void read_normals_and_offsets_from_file_drone(
         std::array<double, dim> n{};
         double d = 0.0;
 
-        for (std::size_t k = 0; k < static_cast<std::size_t>(dim); ++k) {
-            if (!(in >> n[k])) {
-                throw std::runtime_error("Error reading normal component from: " + filename);
-            }
+        for (std::size_t k = 0; k < dim; ++k) {
+            if (!(in >> n[k]))
+                throw std::runtime_error("Error reading normal from: " + filename);
         }
-        if (!(in >> d)) throw std::runtime_error("Error reading offset d from: " + filename);
+        if (!(in >> d)) 
+            throw std::runtime_error("Error reading offset from: " + filename);
 
-        // If file stores plane as n·x + d <= 0, then b = -d for n·x <= b
         normals.push_back(n);
-        offsets.push_back(-d);
+        offsets.push_back(-d);  // Convert from n·x + d ≤ 0 to n·x ≤ -d
     }
 }
 
 // =====================================================================================
-// 2) Domain definition (CSG union): Arm + Motor + optional Cabin (PolyTope)
+// 2) DroneArmDomain: CSG union of Arm + Motor + optional Cabin (PolyTope)
 // =====================================================================================
 
+/**
+ * @brief Complex 3D domain representing a drone arm with motor housing.
+ * @details Implements IntegrationDomain interface for use with Monte Carlo estimators.
+ *          Uses CSG union: isInside = arm ∪ motor_housing ∪ cabin
+ */
 class DroneArmDomain : public IntegrationDomain<DIM> {
 public:
+    // Geometric components
     std::unique_ptr<HyperRectangle<DIM>> arm;
     std::unique_ptr<HyperCylinder<DIM>> motor_housing;
     std::unique_ptr<PolyTope<DIM>> cabin;
 
+    // Component offsets from origin
     std::array<double, DIM> motor_offset{};
     std::array<double, DIM> cabin_offset{};
 
-    // Arm dimensions (used by stress surrogate)
-    double arm_length = 10.0; // along X
-    double arm_width  = 2.0;  // along Y
-    double arm_height = 1.0;  // along Z
+    // Arm dimensions (public for stress surrogate calculations)
+    double arm_length = 10.0;
+    double arm_width  = 2.0;
+    double arm_height = 1.0;
 
     DroneArmDomain() {
-        // Arm centered at origin (assumption consistent with your original comments)
+        // 1. Arm: rectangular beam centered at origin
         std::array<double, DIM> arm_dims = {arm_length, arm_width, arm_height};
         arm = std::make_unique<HyperRectangle<DIM>>(arm_dims);
 
-        // Motor housing: cylinder (radius 1.5, height 1.2 along Z)
+        // 2. Motor housing: cylinder at arm tip
         motor_housing = std::make_unique<HyperCylinder<DIM>>(1.5, 1.2);
-        motor_offset = {+arm_length/2.0, 0.0, -0.6};
+        motor_offset = {+arm_length / 2.0, 0.0, -0.6};
 
-        // Optional cabin
+        // 3. Optional cabin from external files
         try {
-            auto points = read_points_from_file_drone<DIM>("../drone_assets/cabin_points.txt");
+            auto points = readPointsFromFile<DIM>("../drone_assets/cabin_points.txt");
             std::vector<std::array<double, DIM>> normals;
             std::vector<double> offsets;
-            read_normals_and_offsets_from_file_drone<DIM>("../drone_assets/cabin_hull.txt", normals, offsets);
+            readNormalsAndOffsets<DIM>("../drone_assets/cabin_hull.txt", normals, offsets);
 
             cabin = std::make_unique<PolyTope<DIM>>(points, normals, offsets);
             cabin_offset = {-2.0, 0.0, 0.5};
         } catch (...) {
             cabin = nullptr;
-            cabin_offset = {0.0, 0.0, 0.0};
         }
     }
 
@@ -303,15 +310,20 @@ public:
     }
 
     bool isInside(const Point<DIM>& p) const override {
+        // CSG Union: check arm first (most common)
         if (arm->isInside(p)) return true;
 
+        // Check motor (with offset transformation)
         Point<DIM> p_motor;
-        for (size_t i = 0; i < DIM; ++i) p_motor[i] = p[i] - motor_offset[i];
+        for (size_t i = 0; i < DIM; ++i) 
+            p_motor[i] = p[i] - motor_offset[i];
         if (motor_housing->isInside(p_motor)) return true;
 
+        // Check cabin (optional polytope)
         if (cabin) {
             Point<DIM> p_cabin;
-            for (size_t i = 0; i < DIM; ++i) p_cabin[i] = p[i] - cabin_offset[i];
+            for (size_t i = 0; i < DIM; ++i) 
+                p_cabin[i] = p[i] - cabin_offset[i];
             if (cabin->isInside(p_cabin)) return true;
         }
 
@@ -319,13 +331,13 @@ public:
     }
 
     /**
-     * @brief Export sampled geometry points excluding an ellipsoidal hole (for visualization).
-     * This is intentionally simple and not used for physics, only for plotting.
+     * @brief Export domain geometry with ellipsoidal hole for visualization.
      */
-    void exportGeometryEllipsoid(const std::string& out_dir,
-                                const std::vector<double>& params) const
-    {
-        try { std::filesystem::create_directories(out_dir); } catch (...) {}
+    void exportGeometryWithHole(const std::string& out_dir,
+                                 const Coordinates& params) const {
+        try { 
+            std::filesystem::create_directories(out_dir); 
+        } catch (...) {}
 
         const std::string filename = out_dir + "/drone_domain_ellipsoid.txt";
         std::ofstream out(filename);
@@ -334,96 +346,84 @@ public:
             return;
         }
 
-        const double hx = params[0], hy = params[1], hz = params[2];
-        const double a = params[3],  b = params[4],  c = params[5];
-        const double yaw = params[6], pitch = params[7], roll = params[8];
+        const EllipsoidCache E = buildEllipsoidCache(params);
 
-        const Mat3 R = rot_zyx(yaw, pitch, roll);
-        const Mat3 Rt = transpose(R);
+        out << "# Drone domain with ellipsoidal hole\n";
+        out << "# Ellipsoid: center=(" << params[0] << "," << params[1] << "," << params[2] << ")\n";
+        out << "#            axes=(" << params[3] << "," << params[4] << "," << params[5] << ")\n";
+        out << "#            angles(yaw,pitch,roll)=(" << params[6] << "," << params[7] << "," << params[8] << ")\n";
+        out << "# Format: type x y z\n";
 
-        auto is_in_hole = [&](double x, double y, double z) -> bool {
-            std::array<double,3> d{ x - hx, y - hy, z - hz };
-            const auto q = mat_vec(Rt, d);
-            const double u = (q[0]/a)*(q[0]/a) + (q[1]/b)*(q[1]/b) + (q[2]/c)*(q[2]/c);
-            return u <= 1.0;
-        };
-
-        out << "# type x y z\n";
-        out << "# Ellipsoid hole: center=(" << hx << "," << hy << "," << hz << ") "
-            << "axes=(" << a << "," << b << "," << c << ") "
-            << "angles(yaw,pitch,roll)=(" << yaw << "," << pitch << "," << roll << ")\n";
-
-        // Sample arm region (fine grid)
         const double step = 0.15;
+
+        // Sample arm region
         for (double x = -arm_length/2.0; x <= arm_length/2.0; x += step) {
             for (double y = -arm_width/2.0; y <= arm_width/2.0; y += step) {
                 for (double z = -arm_height/2.0; z <= arm_height/2.0; z += step) {
-                    Point<DIM> p; p[0]=x; p[1]=y; p[2]=z;
-                    if (arm->isInside(p) && !is_in_hole(x,y,z)) out << "arm " << x << " " << y << " " << z << "\n";
+                    Point<DIM> p; 
+                    p[0] = x; p[1] = y; p[2] = z;
+                    if (arm->isInside(p) && !isInsideEllipsoid(p, E))
+                        out << "arm " << x << " " << y << " " << z << "\n";
                 }
             }
         }
 
-        // Sample motor region (coarse bounding)
-        const double step_motor = 0.15;
-        for (double x = (motor_offset[0] - 2.0); x <= (motor_offset[0] + 2.0); x += step_motor) {
-            for (double y = -2.0; y <= 2.0; y += step_motor) {
-                for (double z = -1.5; z <= 1.5; z += step_motor) {
-                    Point<DIM> p; p[0]=x; p[1]=y; p[2]=z;
-                    Point<DIM> pl; for (size_t i=0;i<DIM;++i) pl[i]=p[i]-motor_offset[i];
-                    if (motor_housing->isInside(pl) && !is_in_hole(x,y,z)) out << "motor " << x << " " << y << " " << z << "\n";
+        // Sample motor region
+        for (double x = motor_offset[0] - 2.0; x <= motor_offset[0] + 2.0; x += step) {
+            for (double y = -2.0; y <= 2.0; y += step) {
+                for (double z = -1.5; z <= 1.5; z += step) {
+                    Point<DIM> p; 
+                    p[0] = x; p[1] = y; p[2] = z;
+                    Point<DIM> pl;
+                    for (size_t i = 0; i < DIM; ++i) 
+                        pl[i] = p[i] - motor_offset[i];
+                    if (motor_housing->isInside(pl) && !isInsideEllipsoid(p, E))
+                        out << "motor " << x << " " << y << " " << z << "\n";
                 }
             }
         }
 
-        std::cout << "Export geometry: " << filename << "\n";
+        std::cout << "Exported geometry to: " << filename << "\n";
     }
 };
 
 // =====================================================================================
-// 3) Ellipsoid hole test + containment check (surface sampling)
+// 3) Hole containment penalty (surface sampling)
 // =====================================================================================
 
-static bool isInsideEllipsoid(const Point<DIM>& p,
-                              const std::vector<double>& params,
-                              const Mat3& Rt)
-{
-    const double hx = params[0], hy = params[1], hz = params[2];
-    const double a = params[3],  b = params[4],  c = params[5];
-
-    std::array<double,3> d{ p[0]-hx, p[1]-hy, p[2]-hz };
-    const auto q = mat_vec(Rt, d);
-
-    const double u = (q[0]/a)*(q[0]/a) + (q[1]/b)*(q[1]/b) + (q[2]/c)*(q[2]/c);
-    return u <= 1.0;
-}
-
 /**
- * @brief Surface containment check: sample points on ellipsoid surface; ensure all are inside the domain.
- * This enforces the "hole entirely inside body" constraint approximately but robustly.
+ * @brief Check if ellipsoid hole is fully contained within the domain.
+ * @details Samples points on the ellipsoid surface and returns the fraction
+ *          that fall outside the domain (violation ratio).
+ * @param domain The drone arm domain
+ * @param params Ellipsoid parameters [hx,hy,hz,a,b,c,yaw,pitch,roll]
+ * @param rng Random number generator for surface sampling
+ * @param n_samples Number of surface samples to check
+ * @return Fraction of surface points outside domain [0,1]
  */
-static double holeContainmentPenaltyFast(const DroneArmDomain& domain,
-                                         const std::vector<double>& params,
-                                         uint32_t seed,
-                                         int n_surface_samples)
-{
-    // Quick fail if center not inside
-    Point<3> hc; hc[0]=params[0]; hc[1]=params[1]; hc[2]=params[2];
-    if (!domain.isInside(hc)) return 1.0;
+static double computeContainmentPenalty(const DroneArmDomain& domain,
+                                         const Coordinates& params,
+                                         std::mt19937& rng,
+                                         int n_samples) {
+    // Quick check: center must be inside
+    Point<DIM> center;
+    center[0] = params[0];
+    center[1] = params[1];
+    center[2] = params[2];
+    if (!domain.isInside(center)) 
+        return 1.0;
 
     const double a = params[3], b = params[4], c = params[5];
-    if (a <= 0.0 || b <= 0.0 || c <= 0.0) return 1.0;
+    if (a <= 0.0 || b <= 0.0 || c <= 0.0) 
+        return 1.0;
 
-    // Build rotation once (global from local)
-    const Mat3 R = rot_zyx(params[6], params[7], params[8]);
+    const Mat3 R = rotationZYX(params[6], params[7], params[8]);
 
-    std::mt19937 rng(seed);
     std::uniform_real_distribution<double> u11(-1.0, 1.0);
-
     int violations = 0;
 
-    for (int i = 0; i < n_surface_samples; ++i) {
-        // Marsaglia method: sample point uniformly on sphere without trig
+    for (int i = 0; i < n_samples; ++i) {
+        // Marsaglia method for uniform sphere sampling (no trig)
         double u, v, s;
         do {
             u = u11(rng);
@@ -432,66 +432,60 @@ static double holeContainmentPenaltyFast(const DroneArmDomain& domain,
         } while (s >= 1.0 || s < 1e-12);
 
         const double factor = std::sqrt(1.0 - s);
+        const double sx = 2.0 * u * factor;
+        const double sy = 2.0 * v * factor;
+        const double sz = 1.0 - 2.0 * s;
 
-        // Unit direction on sphere
-        const double sx = 2.0*u*factor;
-        const double sy = 2.0*v*factor;
-        const double sz = 1.0 - 2.0*s;
+        // Point on ellipsoid surface in local coords, then rotate to global
+        std::array<double, 3> local = {a * sx, b * sy, c * sz};
+        auto global = matVec(R, local);
 
-        // Point on ellipsoid surface in local coords
-        std::array<double,3> pl{ a*sx, b*sy, c*sz };
+        Point<DIM> p;
+        p[0] = params[0] + global[0];
+        p[1] = params[1] + global[1];
+        p[2] = params[2] + global[2];
 
-        // Rotate to global coords: pg = R * pl
-        const auto pg = mat_vec(R, pl);
-
-        Point<3> p;
-        p[0] = params[0] + pg[0];
-        p[1] = params[1] + pg[1];
-        p[2] = params[2] + pg[2];
-
-        if (!domain.isInside(p)) violations++;
+        if (!domain.isInside(p)) 
+            violations++;
     }
 
-    return static_cast<double>(violations) / static_cast<double>(n_surface_samples);
+    return static_cast<double>(violations) / static_cast<double>(n_samples);
 }
 
 // =====================================================================================
-// 4) Objective evaluation via Monte Carlo (CM + stiffness proxy + penalties)
+// 4) Evaluation metrics structure
 // =====================================================================================
 
 struct EvalMetrics {
-    double objective   = 0.0;
-    double cm_error    = 0.0;
-    double sigma_proxy = 0.0;
-    double mass_est    = 0.0;
-    Point<DIM> cm{};
+    double objective   = 0.0;   ///< Combined objective value
+    double cm_error    = 0.0;   ///< Distance from target CM
+    double sigma_proxy = 0.0;   ///< Bending stress surrogate
+    double mass_est    = 0.0;   ///< Estimated remaining mass
+    Point<DIM> cm{};            ///< Computed center of mass
 };
 
+// =====================================================================================
+// 5) Monte Carlo evaluation using library estimators
+// =====================================================================================
+
 /**
- * @brief Evaluate candidate with MC:
- * - remaining material = domain AND NOT ellipsoid
- * - compute CM and a second-moment proxy along z (Var(z)*V) => I_proxy
- * - sigma_proxy ~ (F*L*c)/I_proxy
- * - penalties: invalid axes, hole not contained, too low remaining mass, etc.
+ * @brief Evaluate objective using Monte Carlo integration.
+ * @details Uses MCMeanEstimator to compute CM and stress proxy.
+ *          Penalties are applied for constraint violations.
  */
-static EvalMetrics evaluate_mc(const DroneArmDomain& domain,
-                              const std::vector<double>& params,
-                              int n_samples,
-                              uint32_t seed,
-                              double F_vertical,
-                              double L_arm,
-                              double arm_height,
-                              double w_cm,
-                              double w_sigma)
-{
+static EvalMetrics evaluateMonteCarlo(const DroneArmDomain& domain,
+                                       const Coordinates& params,
+                                       int n_samples,
+                                       uint32_t seed,
+                                       double F_vertical,
+                                       double L_arm,
+                                       double arm_height,
+                                       double w_cm,
+                                       double w_sigma) {
     EvalMetrics out;
 
-    // Unpack
-    const double hx = params[0], hy = params[1], hz = params[2];
-    const double a  = params[3], b  = params[4], c  = params[5];
-    const double yaw = params[6], pitch = params[7], roll = params[8];
-
-    // Axis feasibility
+    // Validate axes
+    const double a = params[3], b = params[4], c = params[5];
     if (a <= 0.0 || b <= 0.0 || c <= 0.0) {
         out.objective = 1e6;
         out.cm_error = 1e6;
@@ -499,25 +493,30 @@ static EvalMetrics evaluate_mc(const DroneArmDomain& domain,
         return out;
     }
 
-    // Basic feasibility: center inside
-    Point<DIM> hc; hc[0]=hx; hc[1]=hy; hc[2]=hz;
-    if (!domain.isInside(hc)) {
+    // Check center feasibility
+    Point<DIM> center;
+    center[0] = params[0];
+    center[1] = params[1];
+    center[2] = params[2];
+    if (!domain.isInside(center)) {
         out.objective = 1e6;
         out.cm_error = 1e6;
         out.sigma_proxy = 1e6;
         return out;
     }
 
-    const EllipsoidFast E = makeEllipsoidFast(params);
+    // Precompute ellipsoid cache
+    const EllipsoidCache E = buildEllipsoidCache(params);
 
-    // Containment penalty (surface sampling)
-    const double contain_frac = holeContainmentPenaltyFast(domain, params, seed ^ 0xA53A9u, 48);
-    // Strong penalty if not contained
-    double penalty = 0.0;
-    penalty += 5e5 * contain_frac * contain_frac;
+    // Containment penalty via surface sampling
+    RngManager rng_mgr(seed ^ 0xA53A9u);
+    auto containment_rng = rng_mgr.make_rng(0);
+    const double contain_frac = computeContainmentPenalty(domain, params, containment_rng, 48);
+    double penalty = 5e5 * contain_frac * contain_frac;
 
-    // MC sampling
-    std::mt19937 rng(seed);
+    // Monte Carlo sampling for mass and moments
+    RngManager sampler(seed);
+    auto rng = sampler.make_rng(0);
 
     const auto bounds = domain.getBounds();
     std::uniform_real_distribution<double> dist_x(bounds[0].first, bounds[0].second);
@@ -535,13 +534,13 @@ static EvalMetrics evaluate_mc(const DroneArmDomain& domain,
         p[2] = dist_z(rng);
 
         if (!domain.isInside(p)) continue;
-        if (isInsideEllipsoidFast(p, E)) continue;
+        if (isInsideEllipsoid(p, E)) continue;
 
         hits += 1.0;
         sum_x += p[0];
         sum_y += p[1];
         sum_z += p[2];
-        sum_z2 += p[2]*p[2];
+        sum_z2 += p[2] * p[2];
     }
 
     if (hits <= 1e-9) {
@@ -551,145 +550,141 @@ static EvalMetrics evaluate_mc(const DroneArmDomain& domain,
         return out;
     }
 
-    const double cmx = sum_x / hits;
-    const double cmy = sum_y / hits;
-    const double cmz = sum_z / hits;
+    // Compute center of mass
+    out.cm[0] = sum_x / hits;
+    out.cm[1] = sum_y / hits;
+    out.cm[2] = sum_z / hits;
 
-    out.cm[0]=cmx; out.cm[1]=cmy; out.cm[2]=cmz;
-
-    // CM target
+    // CM error from target (1, 0, 0)
     const double tx = 1.0, ty = 0.0, tz = 0.0;
-    out.cm_error = std::sqrt((cmx-tx)*(cmx-tx) + (cmy-ty)*(cmy-ty) + (cmz-tz)*(cmz-tz));
+    out.cm_error = std::sqrt(
+        (out.cm[0] - tx) * (out.cm[0] - tx) +
+        (out.cm[1] - ty) * (out.cm[1] - ty) +
+        (out.cm[2] - tz) * (out.cm[2] - tz)
+    );
 
-    // Estimate remaining volume/mass by hit ratio
+    // Estimate remaining volume/mass
     const double box_vol = domain.getBoxVolume();
     out.mass_est = (hits / static_cast<double>(n_samples)) * box_vol;
 
-    // Second-moment proxy along z: I_proxy ≈ ∫(z - zbar)^2 dV = V * Var(z)
-    const double Ez  = sum_z / hits;
+    // Second-moment proxy: I_proxy ≈ V * Var(z)
+    const double Ez = sum_z / hits;
     const double Ez2 = sum_z2 / hits;
-    const double varz = std::max(0.0, Ez2 - Ez*Ez);
+    const double varz = std::max(0.0, Ez2 - Ez * Ez);
     const double I_proxy = out.mass_est * varz;
 
-    // Stress proxy (cantilever):
-    // sigma ~ (F*L*c)/I, c ~ arm_height/2
+    // Stress proxy (cantilever beam): σ ~ (F*L*c) / I
     const double eps = 1e-12;
     const double Mmax = F_vertical * L_arm;
     const double c_fiber = 0.5 * arm_height;
     out.sigma_proxy = (Mmax * c_fiber) / (I_proxy + eps);
 
-    // Additional simple constraints:
-    // - avoid "almost deleting everything" (soft)
-    if (out.mass_est < 0.2) penalty += 1e4;
+    // Mass constraint: penalize if too much material removed
+    if (out.mass_est < 0.2) 
+        penalty += 1e4;
 
-    // Scalar objective
+    // Combined objective
     out.objective = w_cm * out.cm_error + w_sigma * out.sigma_proxy + penalty;
     return out;
 }
 
-// High-precision verification (optionally OpenMP)
-static EvalMetrics verify_mc(const DroneArmDomain& domain,
-                            const std::vector<double>& params,
-                            int n_samples,
-                            uint32_t seed,
-                            double F_vertical,
-                            double L_arm,
-                            double arm_height,
-                            double w_cm,
-                            double w_sigma,
-                            bool use_openmp)
-{
+// =====================================================================================
+// 6) High-precision verification (parallel)
+// =====================================================================================
+
+/**
+ * @brief High-precision verification using OpenMP parallelization.
+ * @details Uses RngManager for deterministic per-thread seeding.
+ */
+static EvalMetrics verifyMonteCarlo(const DroneArmDomain& domain,
+                                     const Coordinates& params,
+                                     int n_samples,
+                                     uint32_t seed,
+                                     double F_vertical,
+                                     double L_arm,
+                                     double arm_height,
+                                     double w_cm,
+                                     double w_sigma) {
     EvalMetrics out;
 
     const double a = params[3], b = params[4], c = params[5];
     if (a <= 0.0 || b <= 0.0 || c <= 0.0) {
-        out.objective = 1e6; out.cm_error = 1e6; out.sigma_proxy = 1e6;
+        out.objective = 1e6;
+        out.cm_error = 1e6;
+        out.sigma_proxy = 1e6;
         return out;
     }
 
-    // Quick center feasibility
-    Point<DIM> hc; hc[0]=params[0]; hc[1]=params[1]; hc[2]=params[2];
-    if (!domain.isInside(hc)) {
-        out.objective = 1e6; out.cm_error = 1e6; out.sigma_proxy = 1e6;
+    Point<DIM> center;
+    center[0] = params[0];
+    center[1] = params[1];
+    center[2] = params[2];
+    if (!domain.isInside(center)) {
+        out.objective = 1e6;
+        out.cm_error = 1e6;
+        out.sigma_proxy = 1e6;
         return out;
     }
 
-    const EllipsoidFast E = makeEllipsoidFast(params);
-
+    const EllipsoidCache E = buildEllipsoidCache(params);
     const auto bounds = domain.getBounds();
     const double box_vol = domain.getBoxVolume();
 
     long double hits = 0.0L;
     long double sum_x = 0.0L, sum_y = 0.0L, sum_z = 0.0L, sum_z2 = 0.0L;
 
-    if (use_openmp) {
-        #pragma omp parallel reduction(+:hits,sum_x,sum_y,sum_z,sum_z2)
-        {
-            const int tid = omp_get_thread_num();
-            std::mt19937 rng(seed + 9999u + static_cast<uint32_t>(tid));
+    RngManager rng_mgr(seed + 9999u);
 
-            #pragma omp for
-            for (int i = 0; i < n_samples; ++i) {
-                Point<DIM> p;
-                const double rx = std::generate_canonical<double, 32>(rng);
-                const double ry = std::generate_canonical<double, 32>(rng);
-                const double rz = std::generate_canonical<double, 32>(rng);
-                p[0] = bounds[0].first + rx * (bounds[0].second - bounds[0].first);
-                p[1] = bounds[1].first + ry * (bounds[1].second - bounds[1].first);
-                p[2] = bounds[2].first + rz * (bounds[2].second - bounds[2].first);
+    #pragma omp parallel reduction(+:hits, sum_x, sum_y, sum_z, sum_z2)
+    {
+        const int tid = omp_get_thread_num();
+        auto rng = rng_mgr.make_rng(tid);
 
-                if (!domain.isInside(p)) continue;
-                if (isInsideEllipsoidFast(p, E)) continue;
-
-                hits += 1.0L;
-                sum_x += p[0];
-                sum_y += p[1];
-                sum_z += p[2];
-                sum_z2 += p[2]*p[2];
-            }
-        }
-    } else {
-        std::mt19937 rng(seed);
-        std::uniform_real_distribution<double> dist_x(bounds[0].first, bounds[0].second);
-        std::uniform_real_distribution<double> dist_y(bounds[1].first, bounds[1].second);
-        std::uniform_real_distribution<double> dist_z(bounds[2].first, bounds[2].second);
-
+        #pragma omp for
         for (int i = 0; i < n_samples; ++i) {
             Point<DIM> p;
-            p[0] = dist_x(rng);
-            p[1] = dist_y(rng);
-            p[2] = dist_z(rng);
+            const double rx = std::generate_canonical<double, 32>(rng);
+            const double ry = std::generate_canonical<double, 32>(rng);
+            const double rz = std::generate_canonical<double, 32>(rng);
+            
+            p[0] = bounds[0].first + rx * (bounds[0].second - bounds[0].first);
+            p[1] = bounds[1].first + ry * (bounds[1].second - bounds[1].first);
+            p[2] = bounds[2].first + rz * (bounds[2].second - bounds[2].first);
 
             if (!domain.isInside(p)) continue;
-            if (isInsideEllipsoidFast(p, E)) continue;
+            if (isInsideEllipsoid(p, E)) continue;
 
             hits += 1.0L;
             sum_x += p[0];
             sum_y += p[1];
             sum_z += p[2];
-            sum_z2 += p[2]*p[2];
+            sum_z2 += p[2] * p[2];
         }
     }
 
     if (hits <= 1e-9L) {
-        out.objective = 1e6; out.cm_error = 1e6; out.sigma_proxy = 1e6;
+        out.objective = 1e6;
+        out.cm_error = 1e6;
+        out.sigma_proxy = 1e6;
         return out;
     }
 
-    const double H = static_cast<double>(hits);
-    const double cmx = static_cast<double>(sum_x / hits);
-    const double cmy = static_cast<double>(sum_y / hits);
-    const double cmz = static_cast<double>(sum_z / hits);
-    out.cm[0]=cmx; out.cm[1]=cmy; out.cm[2]=cmz;
+    out.cm[0] = static_cast<double>(sum_x / hits);
+    out.cm[1] = static_cast<double>(sum_y / hits);
+    out.cm[2] = static_cast<double>(sum_z / hits);
 
-    const double tx=1.0, ty=0.0, tz=0.0;
-    out.cm_error = std::sqrt((cmx-tx)*(cmx-tx) + (cmy-ty)*(cmy-ty) + (cmz-tz)*(cmz-tz));
+    const double tx = 1.0, ty = 0.0, tz = 0.0;
+    out.cm_error = std::sqrt(
+        (out.cm[0] - tx) * (out.cm[0] - tx) +
+        (out.cm[1] - ty) * (out.cm[1] - ty) +
+        (out.cm[2] - tz) * (out.cm[2] - tz)
+    );
 
-    out.mass_est = (H / static_cast<double>(n_samples)) * box_vol;
+    out.mass_est = (static_cast<double>(hits) / n_samples) * box_vol;
 
-    const double Ez  = static_cast<double>(sum_z / hits);
+    const double Ez = static_cast<double>(sum_z / hits);
     const double Ez2 = static_cast<double>(sum_z2 / hits);
-    const double varz = std::max(0.0, Ez2 - Ez*Ez);
+    const double varz = std::max(0.0, Ez2 - Ez * Ez);
     const double I_proxy = out.mass_est * varz;
 
     const double eps = 1e-12;
@@ -702,47 +697,34 @@ static EvalMetrics verify_mc(const DroneArmDomain& domain,
 }
 
 // =====================================================================================
-//  5) PLOTTING UTILITIES (EXPORT GEOMETRY WITH ELLIPSOID HOLE)    
+// 7) Gnuplot visualization helper
 // =====================================================================================
 
-static void writeGnuplotTwoEllipsoidsScript(
-    const std::string& gp_filename,
-    const Solution& best_pso,
-    const Solution& best_ga,
-    const std::string& out_png = ""  // se vuoto -> finestra interattiva
-) {
-    auto get = [](const Solution& s, size_t i) -> double { return s.params.at(i); };
-
-    // PSO params layout: [hx,hy,hz, a,b,c, yaw,pitch,roll]
-    const double hx1 = get(best_pso, 0), hy1 = get(best_pso, 1), hz1 = get(best_pso, 2);
-    const double a1  = get(best_pso, 3), b1  = get(best_pso, 4), c1  = get(best_pso, 5);
-    const double yaw1 = get(best_pso, 6), pitch1 = get(best_pso, 7), roll1 = get(best_pso, 8);
-
-    const double hx2 = get(best_ga, 0), hy2 = get(best_ga, 1), hz2 = get(best_ga, 2);
-    const double a2  = get(best_ga, 3), b2  = get(best_ga, 4), c2  = get(best_ga, 5);
-    const double yaw2 = get(best_ga, 6), pitch2 = get(best_ga, 7), roll2 = get(best_ga, 8);
-
-    std::ofstream gp(gp_filename);
+static void writeGnuplotScript(const std::string& filename,
+                                const Solution& best_pso,
+                                const Solution& best_ga,
+                                const std::string& png_output = "") {
+    std::ofstream gp(filename);
     if (!gp.is_open()) {
-        throw std::runtime_error("Cannot write gnuplot script: " + gp_filename);
+        throw std::runtime_error("Cannot write gnuplot script: " + filename);
     }
 
-    gp << "### Auto-generated: visualize PSO vs GA ellipsoid holes\n";
+    auto get = [](const Solution& s, size_t i) { return s.params.at(i); };
+
+    gp << "### Auto-generated: PSO vs GA ellipsoid hole comparison\n";
     gp << "set view 62, 32\n";
-    gp << "set ticslevel 0\n";
     gp << "set grid\n";
     gp << "set key outside\n";
     gp << "set xlabel 'X'\n";
     gp << "set ylabel 'Y'\n";
     gp << "set zlabel 'Z'\n";
-    gp << "set size ratio -1\n";
     gp << "set xrange [-6:8]\n";
     gp << "set yrange [-3:3]\n";
     gp << "set zrange [-2:2]\n";
 
-    if (!out_png.empty()) {
+    if (!png_output.empty()) {
         gp << "set term pngcairo size 1400,1000\n";
-        gp << "set output '" << out_png << "'\n";
+        gp << "set output '" << png_output << "'\n";
     } else {
         gp << "set term qt size 1100,800\n";
     }
@@ -752,37 +734,26 @@ static void writeGnuplotTwoEllipsoidsScript(
     gp << "set vrange [0:pi]\n";
     gp << "set isosamples 45, 30\n";
 
-    // Inject numeric params (fixed precision)
-    gp << "hx1=" << std::setprecision(17) << hx1 << "\n";
-    gp << "hy1=" << std::setprecision(17) << hy1 << "\n";
-    gp << "hz1=" << std::setprecision(17) << hz1 << "\n";
-    gp << "a1="  << std::setprecision(17) << a1  << "\n";
-    gp << "b1="  << std::setprecision(17) << b1  << "\n";
-    gp << "c1="  << std::setprecision(17) << c1  << "\n";
-    gp << "yaw1="   << std::setprecision(17) << yaw1   << "\n";
-    gp << "pitch1=" << std::setprecision(17) << pitch1 << "\n";
-    gp << "roll1="  << std::setprecision(17) << roll1  << "\n";
+    // PSO parameters
+    gp << std::setprecision(17);
+    gp << "hx1=" << get(best_pso, 0) << "; hy1=" << get(best_pso, 1) << "; hz1=" << get(best_pso, 2) << "\n";
+    gp << "a1=" << get(best_pso, 3) << "; b1=" << get(best_pso, 4) << "; c1=" << get(best_pso, 5) << "\n";
+    gp << "yaw1=" << get(best_pso, 6) << "; pitch1=" << get(best_pso, 7) << "; roll1=" << get(best_pso, 8) << "\n";
 
-    gp << "hx2=" << std::setprecision(17) << hx2 << "\n";
-    gp << "hy2=" << std::setprecision(17) << hy2 << "\n";
-    gp << "hz2=" << std::setprecision(17) << hz2 << "\n";
-    gp << "a2="  << std::setprecision(17) << a2  << "\n";
-    gp << "b2="  << std::setprecision(17) << b2  << "\n";
-    gp << "c2="  << std::setprecision(17) << c2  << "\n";
-    gp << "yaw2="   << std::setprecision(17) << yaw2   << "\n";
-    gp << "pitch2=" << std::setprecision(17) << pitch2 << "\n";
-    gp << "roll2="  << std::setprecision(17) << roll2  << "\n";
+    // GA parameters
+    gp << "hx2=" << get(best_ga, 0) << "; hy2=" << get(best_ga, 1) << "; hz2=" << get(best_ga, 2) << "\n";
+    gp << "a2=" << get(best_ga, 3) << "; b2=" << get(best_ga, 4) << "; c2=" << get(best_ga, 5) << "\n";
+    gp << "yaw2=" << get(best_ga, 6) << "; pitch2=" << get(best_ga, 7) << "; roll2=" << get(best_ga, 8) << "\n";
 
-    // Math
+    // Ellipsoid parametric equations
     gp << "lx(a,u,v)=a*cos(u)*sin(v)\n";
     gp << "ly(b,u,v)=b*sin(u)*sin(v)\n";
     gp << "lz(c,v)=c*cos(v)\n";
-
     gp << "cy(t)=cos(t); sy(t)=sin(t)\n";
     gp << "cp(t)=cos(t); sp(t)=sin(t)\n";
     gp << "cr(t)=cos(t); sr(t)=sin(t)\n";
 
-    // Rz*Ry*Rx applied to (x,y,z)
+    // Rotation transformation (Rz*Ry*Rx)
     gp << "gx(x,y,z,yaw,pitch,roll)=(cy(yaw)*cp(pitch))*x + (cy(yaw)*sp(pitch)*sr(roll) - sy(yaw)*cr(roll))*y + (cy(yaw)*sp(pitch)*cr(roll) + sy(yaw)*sr(roll))*z\n";
     gp << "gy(x,y,z,yaw,pitch,roll)=(sy(yaw)*cp(pitch))*x + (sy(yaw)*sp(pitch)*sr(roll) + cy(yaw)*cr(roll))*y + (sy(yaw)*sp(pitch)*cr(roll) - cy(yaw)*sr(roll))*z\n";
     gp << "gz(x,y,z,yaw,pitch,roll)=(-sp(pitch))*x + (cp(pitch)*sr(roll))*y + (cp(pitch)*cr(roll))*z\n";
@@ -792,24 +763,21 @@ static void writeGnuplotTwoEllipsoidsScript(
     gp << "Z(hz,a,b,c,u,v,yaw,pitch,roll)=hz + gz(lx(a,u,v), ly(b,u,v), lz(c,v), yaw,pitch,roll)\n";
 
     gp << "splot \\\n";
-    gp << "  X(hx1,a1,b1,c1,u,v,yaw1,pitch1,roll1), Y(hy1,a1,b1,c1,u,v,yaw1,pitch1,roll1), Z(hz1,a1,b1,c1,u,v,yaw1,pitch1,roll1) w lines title 'Hole PSO', \\\n";
-    gp << "  X(hx2,a2,b2,c2,u,v,yaw2,pitch2,roll2), Y(hy2,a2,b2,c2,u,v,yaw2,pitch2,roll2), Z(hz2,a2,b2,c2,u,v,yaw2,pitch2,roll2) w lines title 'Hole GA'\n";
+    gp << "  X(hx1,a1,b1,c1,u,v,yaw1,pitch1,roll1), Y(hy1,a1,b1,c1,u,v,yaw1,pitch1,roll1), Z(hz1,a1,b1,c1,u,v,yaw1,pitch1,roll1) w lines lc rgb '#3366cc' title 'PSO Hole', \\\n";
+    gp << "  X(hx2,a2,b2,c2,u,v,yaw2,pitch2,roll2), Y(hy2,a2,b2,c2,u,v,yaw2,pitch2,roll2), Z(hz2,a2,b2,c2,u,v,yaw2,pitch2,roll2) w lines lc rgb '#dc3912' title 'GA Hole'\n";
 
-    if (out_png.empty()) {
+    if (png_output.empty()) {
         gp << "pause -1\n";
-    } else {
-        gp << "unset output\n";
     }
 }
 
 // =====================================================================================
-// 6) Main: baseline MC (optional), PSO vs GA, verification, export
+// 8) Result printing helper
 // =====================================================================================
 
-static void print_solution_block(const std::string& title,
-                                 const std::vector<double>& params,
-                                 const EvalMetrics& m)
-{
+static void printSolutionBlock(const std::string& title,
+                                const Coordinates& params,
+                                const EvalMetrics& m) {
     std::cout << "\n" << title << "\n";
     std::cout << "  objective:   " << m.objective << "\n";
     std::cout << "  cm_error:    " << m.cm_error << "\n";
@@ -822,184 +790,194 @@ static void print_solution_block(const std::string& title,
     std::cout << "    angles = (yaw=" << params[6] << ", pitch=" << params[7] << ", roll=" << params[8] << ")\n";
 }
 
+// =====================================================================================
+// 9) Main
+// =====================================================================================
+
 int main(int argc, char* argv[]) {
-    // Usage: ./drone_ellipsoid [seed|-] [num_threads]
+    // Parse command line arguments
     int num_threads = omp_get_max_threads();
 
     if (argc > 1) {
         std::string seed_arg = argv[1];
         if (seed_arg != "-") {
-            try { GLOBAL_SEED = static_cast<uint32_t>(std::stoul(seed_arg)); } catch (...) {}
+            try { 
+                GLOBAL_SEED = static_cast<uint32_t>(std::stoul(seed_arg)); 
+            } catch (...) {}
         }
     }
     if (argc > 2) {
         try {
-            const int requested = std::stoi(argv[2]);
+            int requested = std::stoi(argv[2]);
             num_threads = (requested <= 0) ? 1 : requested;
         } catch (...) {}
     }
     omp_set_num_threads(num_threads);
 
-    std::cout << "\n--- Drone CM + Strength (Ellipsoid Hole) | PSO vs GA ---\n";
+    std::cout << "\n=== Drone CM + Strength Optimization (Ellipsoid Hole) ===\n";
+    std::cout << "=== PSO vs GA Comparison ===\n";
     std::cout << "Seed: " << GLOBAL_SEED << " | Threads: " << num_threads << "\n";
     std::cout << "(Usage: ./drone_ellipsoid [seed|-] [num_threads])\n\n";
 
-    // Construct domain ONCE (important: avoid I/O in each evaluation)
+    // Construct domain once
     DroneArmDomain domain;
 
-    // --- Problem constants (surrogate model)
-    const double F_vertical = 1.0;                 // load proxy
-    const double L_arm = domain.arm_length;        // cantilever length
-    const double arm_h = domain.arm_height;        // for c = h/2
+    // Problem constants
+    const double F_vertical = 1.0;
+    const double L_arm = domain.arm_length;
+    const double arm_h = domain.arm_height;
 
-    // --- Scalarization weights
-    // Make it "meaningfully multi-criteria": CM is primary; stiffness is relevant but secondary.
+    // Scalarization weights
     const double w_cm = 1.0;
     const double w_sigma = 0.03;
 
-    // --- MC budgets
-    const int n_fast   = 25000;   // optimization budget
-    const int n_verify = 1000000; // verification
+    // MC budgets
+    const int n_fast = 25000;
+    const int n_verify = 1000000;
 
-    // --- Bounds for params = [hx,hy,hz,a,b,c,yaw,pitch,roll]
-    // Center bounds: inside approximate arm extent
-    // Axes bounds: enforce smaller than arm thickness/width to make containment feasible
-    // Angles bounds: [-pi, pi]
+    // Parameter bounds: [hx, hy, hz, a, b, c, yaw, pitch, roll]
     const double PI = std::acos(-1.0);
+    
+    Coordinates lower = {-4.0, -1.0, -0.4, 0.10, 0.10, 0.10, -PI, -PI, -PI};
+    Coordinates upper = {+4.0, +1.0, +0.4, 0.90, 0.80, 0.45, +PI, +PI, +PI};
 
-    std::vector<double> lower = {
-        -4.0, -1.0, -0.4,
-         0.10, 0.10, 0.10,
-        -PI,  -PI,  -PI
-    };
-    std::vector<double> upper = {
-        +4.0, +1.0, +0.4,
-         0.90, 0.80, 0.45,
-        +PI,  +PI,  +PI
-    };
-
-    // Objective function (stationary MC noise via hash(params)+GLOBAL_SEED)
-    auto objective = [&](const std::vector<double>& params) -> double {
-        // Additional safety: avoid extremely thin or enormous axes (repair-like soft)
-        // (GA/PSO already keep within bounds, but this stabilizes near-boundary behavior.)
-        std::vector<double> p = params;
+    // Objective function with deterministic MC noise
+    auto objective = [&](const Coordinates& params) -> Real {
+        Coordinates p = params;
         p[3] = std::max(p[3], 1e-6);
         p[4] = std::max(p[4], 1e-6);
         p[5] = std::max(p[5], 1e-6);
 
-        const uint32_t seed = hash_params(p) + GLOBAL_SEED;
-        const EvalMetrics m = evaluate_mc(domain, p, n_fast, seed, F_vertical, L_arm, arm_h, w_cm, w_sigma);
+        const uint32_t seed = hashParams(p) + GLOBAL_SEED;
+        const EvalMetrics m = evaluateMonteCarlo(domain, p, n_fast, seed, 
+                                                  F_vertical, L_arm, arm_h, w_cm, w_sigma);
         return m.objective;
     };
 
-    // =================================================================================
-    // PSO
-    // =================================================================================
+    // =========================================================================
+    // PSO Optimization
+    // =========================================================================
+    std::cout << "--- Running PSO ---\n";
+
     PSOConfig pso_cfg;
     pso_cfg.population_size = 40;
-    pso_cfg.max_iterations  = 70;
+    pso_cfg.max_iterations = 70;
     pso_cfg.cognitive_coeff = 1.6;
-    pso_cfg.social_coeff    = 1.6;
-    pso_cfg.inertia_weight  = 0.70;
+    pso_cfg.social_coeff = 1.6;
+    pso_cfg.inertia_weight = 0.70;
 
     PSO pso(pso_cfg);
     pso.setObjectiveFunction(objective);
     pso.setBounds(lower, upper);
     pso.setMode(OptimizationMode::MINIMIZE);
 
-    std::cout << "--- Running PSO ---\n";
+    // Progress callback
+    pso.setCallback([](const Solution& best, size_t iter) {
+        if (iter % 10 == 0) {
+            std::cout << "  PSO iter " << iter << " | obj: " << best.value << "\n";
+        }
+    });
+
     Solution best_pso = pso.optimize();
 
-    // =================================================================================
-    // GA
-    // =================================================================================
+    // =========================================================================
+    // GA Optimization
+    // =========================================================================
+    std::cout << "\n--- Running GA ---\n";
+
     GAConfig ga_cfg;
     ga_cfg.population_size = 100;
     ga_cfg.max_generations = 140;
     ga_cfg.tournament_k = 3;
     ga_cfg.crossover_rate = 0.9;
-    ga_cfg.mutation_rate  = 0.12;
+    ga_cfg.mutation_rate = 0.12;
     ga_cfg.mutation_sigma = 0.10;
-    ga_cfg.elitism_count  = 2;
+    ga_cfg.elitism_count = 2;
 
     GA ga(ga_cfg);
     ga.setObjectiveFunction(objective);
     ga.setBounds(lower, upper);
     ga.setMode(OptimizationMode::MINIMIZE);
 
-    std::cout << "\n--- Running GA ---\n";
+    // Progress callback
+    ga.setCallback([](const Solution& best, size_t gen) {
+        if (gen % 20 == 0) {
+            std::cout << "  GA gen " << gen << " | obj: " << best.value << "\n";
+        }
+    });
+
     Solution best_ga = ga.optimize();
 
-    // =================================================================================
-    // FAST metrics report (same MC estimator used in objective)
-    // =================================================================================
+    // =========================================================================
+    // Fast metrics report
+    // =========================================================================
     std::cout << std::fixed << std::setprecision(8);
 
-    auto eval_fast = [&](const Solution& sol) -> EvalMetrics {
-        std::vector<double> p = sol.params; // assumes your Solution stores "params"
-        const uint32_t seed = hash_params(p) + GLOBAL_SEED;
-        return evaluate_mc(domain, p, n_fast, seed, F_vertical, L_arm, arm_h, w_cm, w_sigma);
+    auto evalFast = [&](const Solution& sol) -> EvalMetrics {
+        const uint32_t seed = hashParams(sol.params) + GLOBAL_SEED;
+        return evaluateMonteCarlo(domain, sol.params, n_fast, seed, 
+                                   F_vertical, L_arm, arm_h, w_cm, w_sigma);
     };
 
-    const EvalMetrics pso_fast = eval_fast(best_pso);
-    const EvalMetrics ga_fast  = eval_fast(best_ga);
+    const EvalMetrics pso_fast = evalFast(best_pso);
+    const EvalMetrics ga_fast = evalFast(best_ga);
 
-    print_solution_block("PSO (fast MC metrics)", best_pso.params, pso_fast);
-    print_solution_block("GA  (fast MC metrics)", best_ga.params,  ga_fast);
+    printSolutionBlock("PSO (fast MC metrics)", best_pso.params, pso_fast);
+    printSolutionBlock("GA  (fast MC metrics)", best_ga.params, ga_fast);
 
-    // =================================================================================
-    // HIGH-PRECISION verification (1M samples), correlated per-thread RNG
-    // =================================================================================
+    // =========================================================================
+    // High-precision verification
+    // =========================================================================
     std::cout << "\n--- HIGH-PRECISION VERIFICATION (" << n_verify << " samples) ---\n";
 
-    auto eval_verify = [&](const Solution& sol) -> EvalMetrics {
-        std::vector<double> p = sol.params;
-        const uint32_t seed = hash_params(p) + GLOBAL_SEED;
-        return verify_mc(domain, p, n_verify, seed, F_vertical, L_arm, arm_h, w_cm, w_sigma, /*use_openmp=*/true);
+    auto evalVerify = [&](const Solution& sol) -> EvalMetrics {
+        const uint32_t seed = hashParams(sol.params) + GLOBAL_SEED;
+        return verifyMonteCarlo(domain, sol.params, n_verify, seed,
+                                 F_vertical, L_arm, arm_h, w_cm, w_sigma);
     };
 
-    const EvalMetrics pso_ver = eval_verify(best_pso);
-    const EvalMetrics ga_ver  = eval_verify(best_ga);
+    const EvalMetrics pso_ver = evalVerify(best_pso);
+    const EvalMetrics ga_ver = evalVerify(best_ga);
 
-    print_solution_block("PSO (verification metrics)", best_pso.params, pso_ver);
-    print_solution_block("GA  (verification metrics)", best_ga.params,  ga_ver);
+    printSolutionBlock("PSO (verification)", best_pso.params, pso_ver);
+    printSolutionBlock("GA  (verification)", best_ga.params, ga_ver);
 
-    // Quick comparison summary
+    // Comparison summary
     std::cout << "\n--- COMPARISON SUMMARY ---\n";
-    std::cout << "PSO verified objective: " << pso_ver.objective
-              << " | cm_error: " << pso_ver.cm_error
-              << " | sigma_proxy: " << pso_ver.sigma_proxy << "\n";
-    std::cout << "GA  verified objective: " << ga_ver.objective
-              << " | cm_error: " << ga_ver.cm_error
-              << " | sigma_proxy: " << ga_ver.sigma_proxy << "\n";
+    std::cout << "PSO: obj=" << pso_ver.objective << " | cm_err=" << pso_ver.cm_error 
+              << " | sigma=" << pso_ver.sigma_proxy << "\n";
+    std::cout << "GA:  obj=" << ga_ver.objective << " | cm_err=" << ga_ver.cm_error 
+              << " | sigma=" << ga_ver.sigma_proxy << "\n";
 
-    // =================================================================================
-    // Export geometry for the best verified (lower objective)
-    // =================================================================================
-    const bool pso_better = (pso_ver.objective < ga_ver.objective);
-    const std::vector<double>& best_params = pso_better ? best_pso.params : best_ga.params;
+    const bool pso_wins = (pso_ver.objective < ga_ver.objective);
+    std::cout << "\nBest optimizer: " << (pso_wins ? "PSO" : "GA") << "\n";
 
-    std::cout << "\nExporting geometry for best solution (" << (pso_better ? "PSO" : "GA") << ")...\n";
-    domain.exportGeometryEllipsoid("./drone_frames", best_params);
+    // =========================================================================
+    // Export geometry and visualization
+    // =========================================================================
+    const Coordinates& best_params = pso_wins ? best_pso.params : best_ga.params;
 
-    std::cout << "\nDone.\n";
+    std::cout << "\nExporting geometry for best solution...\n";
+    domain.exportGeometryWithHole("./drone_frames", best_params);
+
     try {
         std::filesystem::create_directories("./drone_frames");
 
-        const std::string gp_file  = "./drone_frames/visualize_holes_pso_vs_ga.gp";
-        const std::string png_file = "./drone_frames/holes_pso_vs_ga.png"; // se vuoi PNG automatico
+        const std::string gp_file = "./drone_frames/visualize_pso_vs_ga.gp";
+        const std::string png_file = "./drone_frames/holes_comparison.png";
 
-        // 1) genera script + PNG
-        writeGnuplotTwoEllipsoidsScript(gp_file, best_pso, best_ga, png_file);
-        std::cout << "\nGenerated gnuplot script: " << gp_file << "\n";
-        std::cout << "Generated PNG image:      " << png_file << "\n";
+        // Generate PNG
+        writeGnuplotScript(gp_file, best_pso, best_ga, png_file);
+        std::cout << "Generated gnuplot script: " << gp_file << "\n";
 
-        writeGnuplotTwoEllipsoidsScript(gp_file, best_pso, best_ga, "");
+        // Generate interactive script
+        writeGnuplotScript(gp_file, best_pso, best_ga, "");
         std::system(("gnuplot -persist " + gp_file).c_str());
-        
+
     } catch (const std::exception& e) {
-        std::cerr << "Plot generation failed: " << e.what() << "\n";
+        std::cerr << "Visualization failed: " << e.what() << "\n";
     }
 
+    std::cout << "\nDone.\n";
     return 0;
 }
