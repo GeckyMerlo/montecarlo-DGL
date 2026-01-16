@@ -31,39 +31,48 @@ void executeBenchmark(const std::string& title,
     std::vector<results> testResults;
 
 	ISMontecarloIntegrator<dim> isIntegrator(domain);
+    UniformProposal<dim> uprop(domain);
+    GaussianProposal<dim> gprop(domain, std::vector<double>(dim, 0.0), std::vector<double>(dim, 0.5));
 
     for (size_t n_i : n_samples_vector) {
-        auto startTimer = std::chrono::high_resolution_clock::now();
+        // 1. Normal MC (Data points are written to rawDataFile by the integrator)
+        auto startTimer1 = std::chrono::high_resolution_clock::now();
+        double result1 = integrator.OLDintegrate(f, n_i);
+        auto endTimer1 = std::chrono::high_resolution_clock::now();
+        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer1 - startTimer1);
 
-        // 1. Integration (Data points are written to rawDataFile by the integrator)
-        double result = integrator.OLDintegrate(f, n_i);
-
-        auto endTimer = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer - startTimer);
-
+        // 2. Uniform IS (Data points are written to rawDataFile by the integrator)
         auto startTimer2 = std::chrono::high_resolution_clock::now();
-
-        // 1. Integration (Data points are written to rawDataFile by the integrator)
-        double result2 = isIntegrator.integrate(f, n_i, UniformProposal<dim>(domain), 12345);
-
+        double result2 = isIntegrator.integrate(f, n_i, uprop, 12345);
         auto endTimer2 = std::chrono::high_resolution_clock::now();
         auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer2 - startTimer2);
+
+        // 2. Uniform IS (Data points are written to rawDataFile by the integrator)
+        auto startTimer3 = std::chrono::high_resolution_clock::now();
+        double result3 = isIntegrator.integrate(f, n_i, gprop, 12345);
+        auto endTimer3 = std::chrono::high_resolution_clock::now();
+        auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer3 - startTimer3);
 
         // Store results
         results newLine;
         newLine.n_samples = n_i;
-        newLine.integration_result = std::to_string(result);
-        newLine.duration = std::to_string(duration.count());
-        testResults.push_back(newLine);
+        newLine.integration_result = std::to_string(result1);
+        newLine.duration = std::to_string(duration1.count());
+        testResults.push_back(newLine); 
 
         // Print to console
-        std::cout << std::setw(12) << n_i << " Normal Samples"
-                  << std::setw(18) << std::fixed << std::setprecision(6) << result
-                  << std::setw(18) << duration.count() << "ms" << std::endl;
+        std::cout << std::setw(12) << n_i << " Normal Sampling"
+                  << std::setw(18) << std::fixed << std::setprecision(6) << result1
+                  << std::setw(18) << duration1.count() << "ms" << std::endl;
 
-        std::cout << std::setw(12) << n_i << " Important Samples"
+        std::cout << std::setw(12) << n_i << " Uniform Importance Sampling"
                   << std::setw(18) << std::fixed << std::setprecision(6) << result2
                   << std::setw(18) << duration2.count() << "ms" << std::endl;
+
+
+        std::cout << std::setw(12) << n_i << " Gaussian Importance Sampling"
+                  << std::setw(18) << std::fixed << std::setprecision(6) << result3
+                  << std::setw(18) << duration3.count() << "ms" << std::endl;
 
         // 2. Plotting (Inside the loop to show progress for each sample size)
         if (useGnuplot) {

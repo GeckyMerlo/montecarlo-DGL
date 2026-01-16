@@ -24,6 +24,7 @@
 
 #include <array>
 #include <cmath>
+#include <vector>
 #include <random>
 
 /**
@@ -46,8 +47,8 @@ public:
      * The sampling uses rejection to ensure samples lie in the domain.
      */
     GaussianProposal(const IntegrationDomain<dim>& d,
-                     const std::array<double, dim>& mean,
-                     const std::array<double, dim>& sigma);
+                     const std::vector<double>& mean,
+                     const std::vector<double>& sigma);
 
     /**
      * @brief Sample a point from the (truncated) Gaussian over the domain.
@@ -71,9 +72,9 @@ public:
 private:
     const IntegrationDomain<dim>& domain;
 
-    std::array<double, dim> mu{};
-    std::array<double, dim> sig{};
-    std::array<double, dim> inv_sig2{};   // 1/sigma^2 for each dimension
+    std::vector<double> mu{};
+    std::vector<double> sig{};
+    std::vector<double> inv_sig2{};   // 1/sigma^2 for each dimension
     double log_norm_const;                // log((2pi)^(-d/2) * prod(1/sigma_i))
 
     // One normal distribution per dimension (diagonal covariance).

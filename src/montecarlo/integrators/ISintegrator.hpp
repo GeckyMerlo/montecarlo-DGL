@@ -8,6 +8,7 @@
 #include "../domains/integration_domain.hpp"
 #include "../proposals/proposal.hpp"
 #include "../proposals/uniformProposal.hpp"
+#include "../proposals/gaussianProposal.hpp"
 #include "../mcmc/metropolisHastingsSampler.hpp"
 #include "../estimators/VolumeEstimatorMC.hpp"
 #include "../estimators/ISMeanEstimator.hpp"
