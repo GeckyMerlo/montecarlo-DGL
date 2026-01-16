@@ -10,6 +10,8 @@
 
 using namespace MuParserInterface;
 
+// --- Helper for formatted console output ---
+
 /**
  * GENERIC execution loop.
  * Runs the integration for increasing sample sizes, measures time, plots results, and saves to file.
@@ -24,6 +26,18 @@ void executeBenchmark(const std::string& title,
                       const std::string& rawDataFile,
                       const std::string& functionExpr)      // Function string for display/save
 {
+    // --- Helper for console output ---
+    auto printLine = [&](std::size_t n,
+                     const std::string& label,
+                     double result,
+                     long time_ms)
+    {
+        std::cout << std::setw(8)  << n << " | "
+                << std::setw(30) << label << " | "
+                << std::setw(20) << std::fixed << std::setprecision(6) << result << " | "
+                << std::setw(5)  << time_ms << " ms\n";
+    };
+
     std::cout << "------------------------------------------------" << std::endl;
     std::cout << title << ":" << std::endl;
     std::cout << "Integrating Function: " << functionExpr << std::endl << std::endl;
@@ -33,6 +47,15 @@ void executeBenchmark(const std::string& title,
 	ISMontecarloIntegrator<dim> isIntegrator(domain);
     UniformProposal<dim> uprop(domain);
     GaussianProposal<dim> gprop(domain, std::vector<double>(dim, 0.0), std::vector<double>(dim, 0.5));
+    MixtureProposal<dim> mix({&uprop, &gprop}, {0.5, 0.5});
+
+    // Header table for console output
+    std::cout << std::string(107, '-') << '\n';
+    std::cout << std::setw(8)  << "Samples" << " | "
+            << std::setw(30) << "Method"  << " | "
+            << std::setw(20) << "Result"  << " | "
+            << std::setw(6)  << "Time"    << '\n';
+    std::cout << std::string(107, '-') << '\n';
 
     for (size_t n_i : n_samples_vector) {
         // 1. Normal MC (Data points are written to rawDataFile by the integrator)
@@ -47,11 +70,17 @@ void executeBenchmark(const std::string& title,
         auto endTimer2 = std::chrono::high_resolution_clock::now();
         auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer2 - startTimer2);
 
-        // 2. Uniform IS (Data points are written to rawDataFile by the integrator)
+        // 3. Gaussian IS (Data points are written to rawDataFile by the integrator)
         auto startTimer3 = std::chrono::high_resolution_clock::now();
         double result3 = isIntegrator.integrate(f, n_i, gprop, 12345);
         auto endTimer3 = std::chrono::high_resolution_clock::now();
         auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer3 - startTimer3);
+
+        // 4. Mixture IS (Data points are written to rawDataFile by the integrator)
+        auto startTimer4 = std::chrono::high_resolution_clock::now();
+        double result4 = isIntegrator.integrate(f, n_i, mix, 12345);
+        auto endTimer4 = std::chrono::high_resolution_clock::now();
+        auto duration4 = std::chrono::duration_cast<std::chrono::milliseconds>(endTimer4 - startTimer4);
 
         // Store results
         results newLine;
@@ -60,19 +89,12 @@ void executeBenchmark(const std::string& title,
         newLine.duration = std::to_string(duration1.count());
         testResults.push_back(newLine); 
 
-        // Print to console
-        std::cout << std::setw(12) << n_i << " Normal Sampling"
-                  << std::setw(18) << std::fixed << std::setprecision(6) << result1
-                  << std::setw(18) << duration1.count() << "ms" << std::endl;
-
-        std::cout << std::setw(12) << n_i << " Uniform Importance Sampling"
-                  << std::setw(18) << std::fixed << std::setprecision(6) << result2
-                  << std::setw(18) << duration2.count() << "ms" << std::endl;
-
-
-        std::cout << std::setw(12) << n_i << " Gaussian Importance Sampling"
-                  << std::setw(18) << std::fixed << std::setprecision(6) << result3
-                  << std::setw(18) << duration3.count() << "ms" << std::endl;
+        // Console Output
+        printLine(n_i, "Normal Sampling",              result1, duration1.count());
+        printLine(n_i, "Uniform Importance Sampling",  result2, duration2.count());
+        printLine(n_i, "Gaussian Importance Sampling", result3, duration3.count());
+        printLine(n_i, "Mixture Importance Sampling",  result4, duration4.count());
+        std::cout << std::string(107, '-') << '\n';
 
         // 2. Plotting (Inside the loop to show progress for each sample size)
         if (useGnuplot) {

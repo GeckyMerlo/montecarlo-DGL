@@ -9,6 +9,7 @@
 #include "../proposals/proposal.hpp"
 #include "../proposals/uniformProposal.hpp"
 #include "../proposals/gaussianProposal.hpp"
+#include "../proposals/mixtureProposal.hpp"
 #include "../mcmc/metropolisHastingsSampler.hpp"
 #include "../estimators/VolumeEstimatorMC.hpp"
 #include "../estimators/ISMeanEstimator.hpp"

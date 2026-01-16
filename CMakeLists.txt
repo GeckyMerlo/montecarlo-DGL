@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(montecarlo_1 CXX)
 
+# --- Suppress all compiler warnings ---
+add_compile_options(-w)
+
 # --- Set C++ standard ---
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
