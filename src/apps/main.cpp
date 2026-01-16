@@ -75,14 +75,26 @@ int main(int argc, char* argv[]) {
     std::cout << "   Monte Carlo Integration Benchmarks" << std::endl;
     std::cout << "===========================================" << std::endl;
 
+    enum Proposal {
+        Zero,
+        Parser,
+        UnifHard,
+        MeHaHard,
+        IsingHard,
+        Polytope,
+        PSO,
+        GA
+    };
+
     // Mode choice
     std::cout << "Select mode:" << std::endl;
-    std::cout << "1. Use function from file (function.txt) - Uses Parser (Slower)" << std::endl;
-    std::cout << "2. Use hardcoded function with Uniform distribution - Uses C++ Lambda (Faster)" << std::endl;
-    std::cout << "3. Use hardcoded function with Metropolis-Hastings distribution - Uses C++ Lambda (Faster)" << std::endl;
-    std::cout << "4. Do you want to use a polytope con covex hull (IT: Inviluppo Convesso)" << std::endl;
-    std::cout << "5. Run Optimizer Benchmarks (PSO)" << std::endl;
-    std::cout << "6. Run Optimizer Benchmarks (GA)" << std::endl;
+    std::cout << Parser << ". Use function from file (function.txt) - Uses Parser (Slower)" << std::endl;
+    std::cout << UnifHard << ". Use hardcoded function with Uniform distribution - Uses C++ Lambda (Faster)" << std::endl;
+    std::cout << MeHaHard << ". Use hardcoded function with Metropolis-Hastings distribution - Uses C++ Lambda (Faster)" << std::endl;
+    std::cout << IsingHard << ". Use hardcoded function with Ising integrator and different distributions - Uses C++ Lambda (Faster)" << std::endl;
+    std::cout << Polytope << ". Do you want to use a polytope con covex hull (IT: Inviluppo Convesso)" << std::endl;
+    std::cout << PSO << ". Run Optimizer Benchmarks (PSO)" << std::endl;
+    std::cout << GA << ". Run Optimizer Benchmarks (GA)" << std::endl;
     std::cout << "Choice: ";
 
     int choice;
@@ -102,7 +114,7 @@ int main(int argc, char* argv[]) {
         useGnuplot = (gpChoice == 'y' || gpChoice == 'Y');
     }
 
-    if (choice == 1) {
+    if (choice == Parser) {
         try {
             std::string expression = readFunctionFromFile(FUNCTION_FILE);
             std::cout << "\nLoaded expression: " << expression << std::endl;
@@ -112,15 +124,19 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: " << e.what() << std::endl;
             return 1;
         }
-    } else if (choice == 2) {
+    } else if (choice == UnifHard) {
         std::cout << "\nStarting HARDCODED benchmarks..." << std::endl;
         // Sends file to gnuPlot
         runBenchmarks(useGnuplot);
-    }else if (choice == 3) {
+    }else if (choice == MeHaHard) {
         std::cout << "\nStarting HARDCODED benchmarks with Metropolis-Hastings distribution..." << std::endl;
         // Sends file to gnuPlot
         runBenchmarksMH(useGnuplot);
-    }else if (choice == 4) {
+    }else if (choice == IsingHard) {
+
+        std::cout << "\nStarting HARDCODED benchmarks with Ising integration on different distribution..." << std::endl;
+
+    }else if (choice == Polytope) {
         std::cout << "\nReading Points, Normals and Offsets..." << std::endl;
 
         std::vector<geom::Point<dim>> points = read_points_from_file<dim>("../points.txt");
@@ -177,9 +193,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Integral f=x   ≈ " << I_x     << "  (exact: 0)\n";
         std::cout << "Integral f=y   ≈ " << I_y     << "  (exact: 0)\n";
 
-    } else if (choice == 5) {
+    } else if (choice == PSO) {
         runOptimizationBenchmarksPSO();
-    } else if (choice == 6) {
+    } else if (choice == GA) {
         runOptimizationBenchmarksGA();
     }else {
         std::cerr << "Invalid choice selected." << std::endl;
