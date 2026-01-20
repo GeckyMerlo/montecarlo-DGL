@@ -49,12 +49,14 @@ namespace optimizers {
         Solution optimize() override;
         void step() override;
         [[nodiscard]] Solution getBestSolution() const override;
-
+        
+        // Getter to access the population from outside (for plotting/debugging)
         [[nodiscard]] const std::vector<Individual>& getPopulation() const {
             return m_population;
         }
 
     private:
+        // Initialize + evaluate
         void initialize();
         void evaluate(Individual& ind);
         void enforceBounds(Coordinates& x);
