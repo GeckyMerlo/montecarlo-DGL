@@ -73,14 +73,14 @@ The architecture follows a **layered modular design** with clear separation of c
 
 | Component | Technology | Justification |
 |-----------|-----------|---------------|
-| **Language** | C++20 | Compile-time optimization via templates; constexpr evaluation; concepts for type safety; std::array zero-cost abstractions |
+| **Language** | C++20 | Compile-time optimization via templates; concepts for type safety; std::array zero-cost abstractions |
 | **Build System** | CMake 3.20+ | Cross-platform support; submodule management; out-of-tree builds; integration with modern IDEs |
 | **Parallelism** | OpenMP 4.5+ | Industry-standard shared-memory parallelism; minimal code intrusion; deterministic scheduling with RNG streams |
 | **Expression Parsing** | muParserX | Runtime function compilation from strings; supports N-dimensional variable binding; zero external dependencies |
 | **I/O & Filesystem** | Boost 1.75+ | Portable filesystem operations; iostreams for Gnuplot pipes; header-only components where possible |
 | **Visualization** | Gnuplot 5.4+ | Scriptable 2D/3D plotting; animation support; widely available in HPC environments |
 
-### Why C++20 Over Modern Alternatives?
+### C++20 
 
 **Performance Requirements**: Monte Carlo methods require 10⁶–10⁹ function evaluations. C++ delivers:
 - Zero-cost abstractions (templates compiled to native code)
@@ -88,7 +88,7 @@ The architecture follows a **layered modular design** with clear separation of c
 - SIMD auto-vectorization opportunities
 - Direct OpenMP integration without FFI overhead
 
-**Legacy Integration**: Many engineering workflows (Qhull, FEA solvers) interface via C APIs. Native C++ simplifies integration without marshalling layers.
+**Legacy Integration**: Engineering workflows (Qhull) interface via C APIs. Native C++ simplifies integration without marshalling layers.
 
 **Deterministic Memory Management**: Critical for reproducibility in stochastic algorithms. RAII patterns prevent resource leaks in parallel contexts.
 
@@ -624,8 +624,7 @@ Given time constraints and research-oriented nature, formal unit test framework 
 
 **Analysis**: Near-linear scaling up to physical core count (4). Hyperthreading provides diminishing returns due to memory bandwidth saturation during random sampling.
 
-## Build System & Deployment
-
+# Cmake
 ### CMake Configuration
 
 **Modern CMake Practices **:
@@ -664,44 +663,6 @@ target_link_libraries(montecarlo_1 PRIVATE
     muparserx
 )
 ```
-
-### Deployment Scenarios
-
-#### 1. HPC Cluster (Research)
-```bash
-# Module-based environment
-module load cmake/3.24 gcc/11.2 boost/1.78 qhull/2020.2
-
-# Build with optimizations
-cmake -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_CXX_FLAGS="-march=native -O3" ..
-make -j16
-
-# SLURM job submission
-sbatch --nodes=1 --ntasks-per-node=16 --time=4:00:00 \
-       --wrap="./montecarlo_1 ${SLURM_ARRAY_TASK_ID} 16"
-```
-
-#### 2. Docker Container (Reproducibility)
-```dockerfile
-FROM ubuntu:24.04
-RUN apt-get update && apt-get install -y \
-    cmake g++ libboost-all-dev gnuplot qhull-bin
-COPY . /workspace
-WORKDIR /workspace/build
-RUN cmake .. && make -j$(nproc)
-ENTRYPOINT ["./montecarlo_1"]
-```
-
-#### 3. VS Code Dev Container (Current Setup)
-Benefits:
-- Consistent environment across developers
-- Pre-configured CMake tools and IntelliSense
-- Portable to GitHub Codespaces
-
----
-
-## Retrospective
 
 ### Major Technical Hurdle: Optimizer Noise Instability
 
