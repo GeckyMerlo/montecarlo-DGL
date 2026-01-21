@@ -26,7 +26,6 @@ void executeBenchmark(const std::string& title,
                       const std::string& rawDataFile,
                       const std::string& functionExpr)      // Function string for display/save
 {   
-    std::mt19937 rng(GLOBAL_SEED);
     // --- Helper for console output ---
     auto printLine = [&](std::size_t n,
                      const std::string& label,
@@ -49,7 +48,6 @@ void executeBenchmark(const std::string& title,
     UniformProposal<dim> uprop(domain);
     std::vector<double> init_mean(dim, 0.0);
     std::vector<double> init_sigma(dim, 2.5);
-    //GaussianProposal<dim> gprop(domain, init_mean, init_sigma);*/
     auto bounds = domain.getBounds();
     for (size_t i = 0; i < dim; ++i) {
         init_mean[i]  = 0.5 * (bounds[i].first + bounds[i].second);
@@ -272,7 +270,7 @@ void runBenchmarksMH(bool useGnuplot) {
     );
 
     std::cout << "Running Benchmarks" << std::endl;
-    std::cout << "Metropolis Hastings result: " << mhintegrator.integrate(f, static_cast<int>(n_samples), dummy_proposal, GLOBAL_SEED) << std::endl;
+    std::cout << "Metropolis Hastings result: " << mhintegrator.integrate(f, static_cast<int>(n_samples), dummy_proposal, std::random_device{}()) << std::endl;
     std::cout << "Montecarlo result: " << integrator.OLDintegrate(f, n_samples) << std::endl;
     std::cout << "Exact result: " << 5000 * M_PI << std::endl;
 }
