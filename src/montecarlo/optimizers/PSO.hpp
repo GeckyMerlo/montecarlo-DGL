@@ -57,6 +57,9 @@ namespace optim{
 
         bool m_initialized = false;
 
+        // Iteration counter used to derive unique RNG stream IDs per step
+        size_t m_current_iter = 0;
+
         StepCallback m_callback;
     };
 } //namespace mc

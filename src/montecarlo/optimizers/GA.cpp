@@ -44,15 +44,7 @@ namespace optim{
 
     void GA::evaluate(Individual& ind) {
         ind.fitness = m_func(ind.genome);
-
-        // Protect global best update in parallel evaluation
-        Solution sol{ind.genome, ind.fitness};
-        #pragma omp critical(mc_ga_best)
-        {
-            if (sol.isBetterThan(m_global_best, m_mode)) {
-                m_global_best = sol;
-            }
-        }
+        // Global best is updated serially outside of parallel regions
     }
 
     void GA::enforceBounds(Coordinates& x) {
@@ -92,6 +84,14 @@ namespace optim{
         #pragma omp parallel for
         for (int i = 0; i < static_cast<int>(m_population.size()); ++i) {
             evaluate(m_population[static_cast<size_t>(i)]);
+        }
+
+        // Serial update of global best to ensure deterministic tie-breaking
+        for (const auto& ind : m_population) {
+            Solution sol{ind.genome, ind.fitness};
+            if (sol.isBetterThan(m_global_best, m_mode)) {
+                m_global_best = sol;
+            }
         }
 
         m_initialized = true;
@@ -190,6 +190,14 @@ namespace optim{
 
         m_population = std::move(next);
         ++m_generation;
+
+        // Serial update of global best after population evolves
+        for (const auto& ind : m_population) {
+            Solution sol{ind.genome, ind.fitness};
+            if (sol.isBetterThan(m_global_best, m_mode)) {
+                m_global_best = sol;
+            }
+        }
     }
 
     Solution GA::optimize() {

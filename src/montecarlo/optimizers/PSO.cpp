@@ -50,16 +50,18 @@ namespace optim{
 
         m_swarm.resize(m_config.population_size);
         const size_t dim = m_lower_bounds.size();
+        m_current_iter = 0; // Reset iteration counter for deterministic seeding
 
         // Init positions/velocities and evaluate
         #ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic)
+        #pragma omp parallel for schedule(static)
         #endif
         for (int p_idx = 0; p_idx < static_cast<int>(m_swarm.size()); ++p_idx) {
             auto& p = m_swarm[static_cast<size_t>(p_idx)];
 
-            // Thread-safe RNG
-            auto local_gen = mc::rng::make_thread_engine(1000ULL + static_cast<std::uint64_t>(p_idx));
+            // Deterministic RNG decoupled from thread scheduling.
+            // Unique stream per particle.
+            auto local_gen = mc::rng::make_engine(1000ULL + static_cast<std::uint64_t>(p_idx));
             std::uniform_real_distribution<Real> dist(0.0, 1.0);
 
             p.position.resize(dim);
@@ -95,13 +97,16 @@ namespace optim{
         const Solution old_global_best = m_global_best;
 
         #ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic)
+        #pragma omp parallel for schedule(static)
         #endif
         for (int p_idx = 0; p_idx < static_cast<int>(m_swarm.size()); ++p_idx) {
             auto& p = m_swarm[static_cast<size_t>(p_idx)];
 
-            // Thread-safe RNG
-            auto local_gen = mc::rng::make_thread_engine(2000ULL + static_cast<std::uint64_t>(p_idx));
+            // Deterministic RNG: mix iteration count into stream id so values change each step.
+            std::uint64_t stream_id = 2000ULL +
+                                      (static_cast<std::uint64_t>(m_current_iter) * m_config.population_size) +
+                                      static_cast<std::uint64_t>(p_idx);
+            auto local_gen = mc::rng::make_engine(stream_id);
             std::uniform_real_distribution<Real> r_dist(0.0, 1.0);
 
             for (size_t i = 0; i < dim; ++i) {
@@ -132,18 +137,19 @@ namespace optim{
                 p.best_position = p.position;
             }
 
-            // Update global best
-            if (new_sol.isBetterThan(m_global_best, m_mode)) {
-                #ifdef _OPENMP
-                #pragma omp critical(mc_pso_best)
-                #endif
-                {
-                    if (new_sol.isBetterThan(m_global_best, m_mode)) {
-                        m_global_best = new_sol;
-                    }
-                }
+            // Global best update moved to a serial post-processing section for determinism
+        }
+
+        // Serial update of global best to ensure deterministic tie-breaking
+        for (const auto& p : m_swarm) {
+            Solution sol{p.best_position, p.best_value};
+            if (sol.isBetterThan(m_global_best, m_mode)) {
+                m_global_best = sol;
             }
         }
+
+        // Advance iteration counter for next step's RNG seeding
+        ++m_current_iter;
     }
 
     void PSO::enforceBounds(Particle& p) {
