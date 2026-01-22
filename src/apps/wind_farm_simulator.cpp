@@ -59,7 +59,7 @@ constexpr double ROTOR_AREA        = M_PI * 25.0 * 25.0;
 constexpr int    MH_SAMPLES         = 1500;
 constexpr size_t MH_BURN_IN         = 400;
 constexpr size_t MH_THINNING        = 2;
-constexpr size_t MH_SAMPLES_FOR_VOL = 0;
+constexpr size_t MH_SAMPLES_FOR_VOL = 2000;
 
 // Proposal sigmas (in physical coordinates v, theta)
 constexpr double PROPOSAL_SIGMA_V     = 2.5;   // m/s
