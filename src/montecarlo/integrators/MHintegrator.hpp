@@ -1,6 +1,8 @@
+// MHintegrator.hpp
 //
 // Created by Giacomo Merlo on 15/01/26.
 //
+
 #ifndef MONTECARLO_DGL_MHINTEGRATOR_HPP
 #define MONTECARLO_DGL_MHINTEGRATOR_HPP
 
@@ -11,9 +13,9 @@
 #include "../estimators/VolumeEstimatorMC.hpp"
 #include "../geometry.hpp"
 
-#include <functional>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 template <std::size_t dim>
 class MHMontecarloIntegrator : public Integrator<dim> {
@@ -21,7 +23,7 @@ public:
     using Point = geom::Point<dim>;
     using Func  = std::function<double(const Point&)>;
 
-    explicit MHMontecarloIntegrator(const IntegrationDomain<dim> &d);
+    explicit MHMontecarloIntegrator(const IntegrationDomain<dim>& d);
 
     double integrate(const Func& f,
                      int n_samples,
@@ -48,4 +50,5 @@ private:
 };
 
 #include "MHintegrator.tpp"
-#endif
+
+#endif // MONTECARLO_DGL_MHINTEGRATOR_HPP

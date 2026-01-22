@@ -1,8 +1,16 @@
+// VolumeEstimatorMC.tpp
 //
 // Created by Giacomo Merlo on 12/01/26.
 //
+
+#include <algorithm>
+#include <cmath>
+#include <optional>
+#include <stdexcept>
+
 #include <omp.h>
-#include "../RngManager.hpp"
+
+#include "montecarlo/rng/rng_factory.hpp"
 
 template <std::size_t dim>
 static geom::Point<dim>
@@ -19,38 +27,36 @@ sample_uniform_in_box(const geom::Bounds<dim>& b, std::mt19937& rng)
 template <std::size_t dim>
 VolumeEstimate<dim>
 VolumeEstimatorMC<dim>::estimate(const IntegrationDomain<dim>& domain,
-                                 uint32_t seed,
+                                 std::uint32_t seed,
                                  std::size_t n_samples) const
 {
-    if (n_samples == 0)
-        throw std::invalid_argument("VolumeEstimatorMC: n_samples must be > 0.");
+    if (n_samples == 0) throw std::invalid_argument("VolumeEstimatorMC: n_samples must be > 0.");
 
     const geom::Bounds<dim> bounds = domain.getBounds();
     const double boxV = domain.getBoxVolume();
 
     const int T = omp_get_max_threads();
-    const size_t base = n_samples / T;
-    const size_t rem  = n_samples % T;
+    const std::size_t base = n_samples / static_cast<std::size_t>(T);
+    const std::size_t rem  = n_samples % static_cast<std::size_t>(T);
 
-    RngManager rngs(seed);
     std::size_t inside = 0;
 
-    #pragma omp parallel for reduction(+:inside)
+#pragma omp parallel for reduction(+:inside)
     for (int tid = 0; tid < T; ++tid) {
-        const size_t n_local = base + (tid < rem ? 1 : 0);
-        auto rng = rngs.make_rng(tid);
-        
-        for (size_t i = 0; i < n_local; ++i) {
+        const std::size_t n_local = base + (static_cast<std::size_t>(tid) < rem ? 1u : 0u);
+
+        auto rng = mc::make_engine_with_seed(std::optional<std::uint32_t>{seed},
+                                             static_cast<std::uint64_t>(tid));
+
+        for (std::size_t i = 0; i < n_local; ++i) {
             const auto x = sample_uniform_in_box<dim>(bounds, rng);
             if (domain.isInside(x)) ++inside;
         }
     }
 
     const double p = static_cast<double>(inside) / static_cast<double>(n_samples);
-
-    // Bernoulli std error for p-hat
     const double var_p = (p * (1.0 - p)) / static_cast<double>(n_samples);
-    const double se_p  = std::sqrt(var_p);
+    const double se_p  = std::sqrt(std::max(0.0, var_p));
 
     VolumeEstimate<dim> out;
     out.n_samples = n_samples;

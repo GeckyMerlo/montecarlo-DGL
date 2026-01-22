@@ -1,15 +1,19 @@
+// MHintegrator.tpp
 //
 // Created by Giacomo Merlo on 15/01/26.
 //
 
-#include "../RngManager.hpp"
-#include <stdexcept>
-#include <iostream>
 #include <cmath>
+#include <iostream>
+#include <optional>
+#include <stdexcept>
+
 #include <omp.h>
 
+#include "montecarlo/rng/rng_factory.hpp"
+
 template <std::size_t dim>
-MHMontecarloIntegrator<dim>::MHMontecarloIntegrator(const IntegrationDomain<dim> &d)
+MHMontecarloIntegrator<dim>::MHMontecarloIntegrator(const IntegrationDomain<dim>& d)
     : Integrator<dim>(d)
 {}
 
@@ -50,39 +54,37 @@ double MHMontecarloIntegrator<dim>::integrate(const Func& f,
     const auto vol_hat = ve.estimate(this->domain, seed, n_samples_volume);
     std::cout << "Volume: " << vol_hat.volume << " +- " << 2 * vol_hat.stderr << "\n";
 
-    long double sum = 0.0;
+    long double sum = 0.0L;
     std::size_t kept = 0;
 
-    Point x{};
+    const int T = omp_get_max_threads();
+    const std::size_t base = static_cast<std::size_t>(n_samples) / static_cast<std::size_t>(T);
+    const std::size_t rem  = static_cast<std::size_t>(n_samples) % static_cast<std::size_t>(T);
 
-	const int T = omp_get_max_threads();
+#pragma omp parallel reduction(+:sum, kept)
+    {
+        const int tid = omp_get_thread_num();
+        const std::size_t n_local = base + (static_cast<std::size_t>(tid) < rem ? 1u : 0u);
 
-    const size_t base = n_samples / T;
-    const size_t rem  = n_samples % T;
+        auto rng = mc::make_engine_with_seed(std::optional<std::uint32_t>{seed},
+                                             static_cast<std::uint64_t>(tid));
 
-	RngManager rngs(seed);
+        MetropolisHastingsSampler<dim> mh_local(this->domain, p, x0, deviation);
+        Point x_local{};
 
-	#pragma omp parallel reduction(+:sum, kept)
-	{
-		const int tid = omp_get_thread_num();
-		const int n_local = base + (tid < rem ? 1 : 0);
+        for (std::size_t i = 0; i < burn_in; ++i)
+            (void)mh_local.next(rng);
 
-		auto rng = rngs.make_rng(tid);
-	    MetropolisHastingsSampler<dim> mh_local(this->domain, p, x0, deviation);
+        for (std::size_t i = 0; i < n_local; ++i) {
+            for (std::size_t t = 0; t < thinning; ++t)
+                x_local = mh_local.next(rng);
 
-		for (std::size_t i = 0; i < burn_in; ++i)
-        	(void)mh_local.next(rng);
-
-    	for (int i = 0; i < n_local; ++i) {
-        	for (std::size_t t = 0; t < thinning; ++t)
-            	x = mh_local.next(rng);
-
-        	const double fx = f(x);
-        	if (std::isfinite(fx)) {
-            	sum += static_cast<long double>(fx);
-            	++kept;
-        	}
-		}
+            const double fx = f(x_local);
+            if (std::isfinite(fx)) {
+                sum += static_cast<long double>(fx);
+                ++kept;
+            }
+        }
     }
 
     if (kept == 0)

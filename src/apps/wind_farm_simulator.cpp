@@ -40,7 +40,6 @@
 #include "../montecarlo/rng/rng_factory.hpp"
 #include "../montecarlo/optimizers/PSO.hpp"
 #include "../montecarlo/optimizers/types.hpp"
-#include "../montecarlo/RngManager.hpp"
 
 using namespace optimizers;
 
