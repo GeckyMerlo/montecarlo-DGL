@@ -1,3 +1,8 @@
+/**
+ * @file ISintegrator.tpp
+ * @brief ISMontecarloIntegrator template implementation.
+ * @details Contains inline implementations for importance sampling integration.
+ */
 //
 // Created by Giacomo Merlo on 15/01/26.
 //

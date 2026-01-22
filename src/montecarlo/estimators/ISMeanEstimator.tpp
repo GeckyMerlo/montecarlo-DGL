@@ -1,4 +1,9 @@
-// ISMeanEstimator.tpp
+/**
+ * @file ISMeanEstimator.tpp
+ * @brief ISMeanEstimator template implementation.
+ * @details Implements importance sampling mean estimation with parallel sampling,
+ * proposal weighting, and standard error computation.
+ */
 
 #ifndef MONTECARLO_DGL_ISMEANESTIMATOR_TPP
 #define MONTECARLO_DGL_ISMEANESTIMATOR_TPP
@@ -14,6 +19,38 @@
 
 namespace mc::estimators {
 
+/**
+ * @brief Estimates the mean of a function over a domain using importance sampling.
+ * @tparam dim The dimensionality of the integration domain.
+ * 
+ * @param domain The integration domain constraint.
+ * @param seed Random seed for reproducibility.
+ * @param n_samples Number of samples to generate.
+ * @param proposal The proposal distribution for importance sampling.
+ * @param f The function to estimate the mean of.
+ * 
+ * @return ImportanceEstimate<dim> containing:
+ *   - n_samples: Total samples generated
+ *   - n_inside: Samples that fell within the domain
+ *   - mean: Estimated mean value (sum of weighted samples / n_samples)
+ *   - stderr: Standard error of the estimate
+ * 
+ * @throws std::invalid_argument If n_samples is zero.
+ * 
+ * @details
+ * The estimator uses importance sampling with a proposal distribution q(x).
+ * Each sample p from the proposal is weighted by f(p)/q(p). The algorithm:
+ * 1. Samples from the proposal distribution
+ * 2. Rejects samples outside the domain
+ * 3. Computes weighted contribution f(p)/q(p)
+ * 4. Accumulates first and second moments
+ * 5. Computes sample variance for standard error
+ * 
+ * The computation is parallelized across available threads with each thread
+ * maintaining independent accumulators to avoid synchronization overhead.
+ * 
+ * @note Uses OpenMP for parallel sampling.
+ */
 template <std::size_t dim>
 ImportanceEstimate<dim> ISMeanEstimator<dim>::estimate(const mc::domains::IntegrationDomain<dim>& domain,
                                                       std::uint32_t seed,

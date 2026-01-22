@@ -1,3 +1,9 @@
+/**
+ * @file VolumeEstimatorMC.tpp
+ * @brief VolumeEstimatorMC template implementation.
+ * @details Implements hit-or-miss volume estimation with parallel sampling
+ * and standard error computation.
+ */
 // VolumeEstimatorMC.tpp
 //
 // Created by Giacomo Merlo on 12/01/26.

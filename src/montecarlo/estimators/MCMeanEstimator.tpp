@@ -1,7 +1,9 @@
-// MCMeanEstimator.tpp
-//
-// Created by Giacomo Merlo on 14/01/26.
-//
+/**
+ * @file MCMeanEstimator.tpp
+ * @brief MCMeanEstimator template implementation.
+ * @details Implements standard Monte Carlo mean estimation with uniform sampling,
+ * domain rejection, and standard error computation.
+ */
 
 #include <algorithm>
 #include <cmath>
@@ -14,6 +16,43 @@
 
 namespace mc::estimators {
 
+/**
+ * @brief Estimates the mean of a function over a domain using standard Monte Carlo.
+ * @tparam dim The dimensionality of the integration domain.
+ * 
+ * @param domain The integration domain constraint.
+ * @param seed Random seed for reproducibility.
+ * @param n_samples Number of samples to generate.
+ * @param f The function to estimate the mean of.
+ * 
+ * @return MeanEstimate<dim> containing:
+ *   - n_samples: Total samples generated
+ *   - n_inside: Samples that fell within the domain
+ *   - mean: Estimated mean value (sum of accepted samples / n_samples)
+ *   - stderr: Standard error of the estimate
+ * 
+ * @throws std::invalid_argument If n_samples is zero.
+ * 
+ * @details
+ * The estimator uses uniform rejection sampling from the bounding box.
+ * The algorithm:
+ * 1. Samples uniformly from the domain's bounding box
+ * 2. Rejects samples outside the domain
+ * 3. Evaluates the function at accepted samples
+ * 4. Accumulates first and second moments
+ * 5. Computes sample variance for standard error
+ * 
+ * The mean is computed as the sum of all function evaluations (including
+ * zero contributions from rejected samples) divided by total samples, which
+ * naturally incorporates the domain's volume ratio.
+ * 
+ * The computation is parallelized across available threads with each thread
+ * maintaining independent accumulators and uniform distributions to avoid
+ * synchronization overhead.
+ * 
+ * @note Uses OpenMP for parallel sampling.
+ * @note Thread-local distribution states improve cache locality.
+ */
 template <std::size_t dim>
 MeanEstimate<dim> MCMeanEstimator<dim>::estimate(const mc::domains::IntegrationDomain<dim>& domain,
                                                 std::uint32_t seed,

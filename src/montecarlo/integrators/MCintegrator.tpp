@@ -1,3 +1,10 @@
+/**
+ * @file MCintegrator.tpp
+ * @brief MontecarloIntegrator template implementation.
+ * @details Contains inline implementations for classic uniform Monte Carlo
+ * and importance-weighted integration.
+ */
+
 // MCintegrator.tpp
 #include "integrator.hpp"
 #include "../geometry.hpp"

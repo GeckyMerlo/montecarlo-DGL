@@ -1,3 +1,9 @@
+/**
+ * @file MHintegrator.tpp
+ * @brief MHMontecarloIntegrator template implementation.
+ * @details Contains inline implementations for Metropolis-Hastings MCMC integration,
+ * including parallel volume estimation, burn-in, thinning, and mean computation.
+ */
 // MHintegrator.tpp
 //
 // Created by Giacomo Merlo on 15/01/26.
