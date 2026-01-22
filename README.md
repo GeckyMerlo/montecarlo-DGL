@@ -121,6 +121,55 @@ gnuplot -persist visualize_drone.gp  # Visualize the drone geometry
 ./drone_optimization 42 0            # Run with seed 42 sequentially (single thread)
 ```
 
+### Mode 8: Wind Farm Layout Optimization
+*Executable: `wind_farm_simulator`* Optimizes wind turbine placement using hybrid Metropolis-Hastings Monte Carlo integration combined with PSO and Genetic Algorithm.
+
+**Use case:** Finding the optimal layout of wind turbines in a farm to maximize power generation while respecting minimum distance constraints.  
+**Performance:** Parallel MH integration with OpenMP thread-safe RNG and optimizers running PSO vs GA comparison.  
+**Output:** Optimized turbine positions, convergence plots, and wind farm layout visualizations.
+
+**How it works:**
+- Models a 1000m × 1000m wind farm with 15 turbines
+- Uses Weibull wind speed distribution and wake effects between turbines
+- Employs Metropolis-Hastings integration to estimate average farm power given a turbine layout
+- Optimizes turbine positions (x, y for each turbine) using both PSO and GA
+- Enforces minimum 50m distance between turbines via penalty function
+- Accounts for wind speed reduction downstream of turbines (wake effect)
+- Models turbine power output based on wind speed, rotor area, air density, and power coefficient
+
+**Physical Model:**
+- **Weibull Wind Distribution:** Wind speeds follow a Weibull distribution (shape k=2.0, scale λ=8.0 m/s)
+- **Wake Effect:** Downstream turbines experience reduced wind speed based on distance from upwind turbines
+- **Power Model:** Turbine power output: $P = 0.5 \times \rho \times A \times C_p \times v^3$
+  - $\rho$ = air density (1.225 kg/m³)
+  - $A$ = rotor area (π × 25² m²)
+  - $C_p$ = power coefficient (0.4)
+  - $v$ = effective wind speed
+
+**Algorithm Configuration:**
+- **MH Integration:** 1500 samples, 400 burn-in, thinning factor 2
+- **PSO:** 60 particles, 150 iterations, inertia=0.6, cognitive=1.8, social=2.0
+- **GA:** 80 population, 200 generations, tournament_k=3, crossover=0.9, mutation=0.1
+
+**Command line:**
+```bash
+./wind_farm_simulator
+```
+
+**Output Files:**
+- `results_pso.dat` - Optimized turbine positions from PSO
+- `results_ga.dat` - Optimized turbine positions from GA
+- `plot_pso.gp` - Gnuplot script for PSO layout visualization
+- `plot_ga.gp` - Gnuplot script for GA layout visualization
+- `wind_farm_layout_pso.png` - PSO optimization result image
+- `wind_farm_layout_ga.png` - GA optimization result image
+
+**Visualization:**
+```bash
+gnuplot plot_pso.gp  # Visualize PSO optimized wind farm layout
+gnuplot plot_ga.gp   # Visualize GA optimized wind farm layout
+```
+
 ### General Notes
 - **Seed Control:** You can specify a custom random seed by running: `./montecarlo_1 <seed>`
 - **Parallelization:** PSO and drone_optimization support OpenMP parallelization. Control with:
