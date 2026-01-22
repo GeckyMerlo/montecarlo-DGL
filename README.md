@@ -1,6 +1,27 @@
 # Montecarlo Integration
 This project implements a Monte Carlo integration algorithm in C++ to calculate definite integrals over N-dimensional hyperspheres and hyperrectangles. The software can use the **muParserX** library to parse mathematical functions at runtime.
 
+## 🚀 Build and Run
+Ensure you have CMake, a C++ compiler, and muParserX installed.  
+From the root of the project:  
+  
+1. Create the build directory and enter it:
+  ```bash
+  mkdir build
+  ```
+2. Generate the build files:
+  ```bash
+  cmake ..
+  ```
+3. Compile the project:
+  ```bash
+  make
+  ```
+4. Run the executable:
+  ```bash
+  ./montecarlo_1
+  ```
+
 ## 📚 Documentation
 
 Full API documentation is available via Doxygen:
@@ -311,27 +332,6 @@ sin(x) * exp(y) + (z^2 / 2)
   ```bash 
   export DISPLAY=host.docker.internal:0
   gnuplot -persist -e "set term x11"
-  ```
-
-## 🚀 Build and Run
-Ensure you have CMake, a C++ compiler, and muParserX installed.  
-From the root of the project:  
-  
-1. Create the build directory and enter it:
-  ```bash
-  mkdir build
-  ```
-2. Generate the build files:
-  ```bash
-  cmake ..
-  ```
-3. Compile the project:
-  ```bash
-  make
-  ```
-4. Run the executable:
-  ```bash
-  ./montecarlo_1
   ```
 
 # Mathematical Background
