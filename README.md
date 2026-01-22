@@ -198,8 +198,8 @@ gnuplot -persist visualize_drone.gp  # Visualize the drone geometry
 *(Note: The images below are from a similar simulation setup to clearly illustrate the hole placement; specific dimensions in the current build may vary slightly.)*
 
 <p float="left">
-<img src="drone_assets/drone_domain_view.png" width="48%" alt="Drone domain view" />
-<img src="drone_assets/drone_domain_hole.png" width="48%" alt="Drone domain hole detail" />
+<img src="assets/drone_domain_view.png" width="48%" alt="Drone domain view" />
+<img src="assets/drone_domain_hole.png" width="48%" alt="Drone domain hole detail" />
 </p>
 
 **Command line:**
@@ -281,6 +281,11 @@ gnuplot plot_ga.gp   # Visualize GA optimized wind farm layout
   ```bash
   pkill -f gnuplot
   ```
+
+<p float="left">
+<img src="assets/wind_farm_layout_ga.png" width="48%" alt="Wind Farm GA" />
+<img src="assets/wind_farm_layout_pso.png" width="48%" alt="Wind farm PSO" />
+</p>
 
 ## 📝 How to Write the Function (muParserX)
 
