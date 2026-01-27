@@ -71,27 +71,18 @@ target_include_directories(test_rng_reproducibility PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# --- Find Boost libraries ---
-find_package(Boost REQUIRED COMPONENTS iostreams filesystem system)
-
 find_package(OpenMP REQUIRED)
 
 # --- Link libraries ---
 target_link_libraries(montecarlo_1 PRIVATE
         OpenMP::OpenMP_CXX
         montecarlo_optimizers
-        Boost::iostreams
-        Boost::filesystem
-        Boost::system
         muparserx
 )
 
 target_link_libraries(drone_optimization PRIVATE
         OpenMP::OpenMP_CXX
         montecarlo_optimizers
-        Boost::iostreams
-        Boost::filesystem
-        Boost::system
         muparserx
 )
 
@@ -104,8 +95,5 @@ target_link_libraries(test_rng_reproducibility PRIVATE
 target_link_libraries(wind_farm_simulator PRIVATE
         OpenMP::OpenMP_CXX
         montecarlo_optimizers
-        Boost::iostreams    
-        Boost::filesystem
-        Boost::system
         muparserx           
 )
