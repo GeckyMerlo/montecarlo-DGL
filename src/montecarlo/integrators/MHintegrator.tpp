@@ -17,6 +17,8 @@
 #include <omp.h>
 
 #include "montecarlo/rng/rng_factory.hpp"
+#include "montecarlo/integrators/MCintegrator.hpp"
+#include "montecarlo/proposals/uniformProposal.hpp"
 
 namespace mc::integrators {
 
@@ -63,11 +65,13 @@ void MHMontecarloIntegrator<dim>::setConfig(std::size_t burn_in_,
     p = std::move(p_);
     x0 = x0_;
     configured = true;
+    const double p0 = p(x0);
 
     if (thinning == 0) throw std::invalid_argument("thinning must be > 0");
     if (deviation <= 0.0) throw std::invalid_argument("deviation must be > 0");
     if (n_samples_volume == 0) throw std::invalid_argument("n_samples_volume must be > 0");
     if (!this->domain.isInside(x0)) throw std::invalid_argument("x0 must be inside the domain");
+    if (!(p0 > 0.0) || !std::isfinite(p0)) throw std::invalid_argument("p(x0) must be finite and > 0 (choose x0 in support of p).");
 }
 
 /**
@@ -104,8 +108,10 @@ double MHMontecarloIntegrator<dim>::integrate(const Func& f,
     if (n_samples <= 0)
         throw std::invalid_argument("n_samples must be > 0");
 
-    mc::estimators::VolumeEstimatorMC<dim> ve;
-    const auto vol_hat = ve.estimate(this->domain, seed, n_samples_volume);
+    //Estimate Zp = ∫_Ω p(x) dx with a plain MC integrator (uniform samplI)
+    mc::proposals::UniformProposal<dim> proposal(this->domain);
+    mc::integrators::MontecarloIntegrator<dim> uni(this->domain);
+    const double Zp_hat = uni.integrate(p, n_samples_volume, proposal, seed);
 
     long double sum = 0.0L;
     std::size_t kept = 0;
@@ -120,33 +126,39 @@ double MHMontecarloIntegrator<dim>::integrate(const Func& f,
         const std::size_t n_local = base + (static_cast<std::size_t>(tid) < rem ? 1u : 0u);
 
         auto rng = mc::rng::make_engine_with_seed(std::optional<std::uint32_t>{seed},
-                             static_cast<std::uint64_t>(tid));
+                                                  static_cast<std::uint64_t>(tid));
 
         mc::mcmc::MetropolisHastingsSampler<dim> mh_local(this->domain, p, x0, deviation);
         Point x_local{};
 
-        // Burn-in: discard initial samples for convergence
+        // Burn-in
         for (std::size_t i = 0; i < burn_in; ++i)
             (void)mh_local.next(rng);
 
-        // Sampling with thinning: collect every thinning-th sample
+        // Sampling + thinning
         for (std::size_t i = 0; i < n_local; ++i) {
             for (std::size_t t = 0; t < thinning; ++t)
                 x_local = mh_local.next(rng);
 
+            const double px = p(x_local);
+            if (!(px > 0.0) || !std::isfinite(px))
+                continue;
+
             const double fx = f(x_local);
             if (std::isfinite(fx)) {
-                sum += static_cast<long double>(fx);
+                sum += static_cast<long double>(fx / px);
                 ++kept;
             }
         }
     }
 
     if (kept == 0)
-        throw std::runtime_error("All sampled f(x) were non-finite.");
+        throw std::runtime_error("All sampled f(x)/p(x) were invalid (p<=0 or non-finite).");
 
-    const double mean_f = static_cast<double>(sum / static_cast<long double>(kept));
-    return vol_hat.volume * mean_f;
+    const double mean_f_over_p = static_cast<double>(sum / static_cast<long double>(kept));
+
+    //Integral estimate
+    return Zp_hat * mean_f_over_p;
 }
 
-} // namespace mc::integrators
+} //namespace mc::integrators
