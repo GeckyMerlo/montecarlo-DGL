@@ -24,6 +24,9 @@ From the root of the project:
 
 ## 📚 Documentation
 
+Progeject documentation at:
+**https://benfrost-20.github.io/montecarlo-DGL/**
+
 Full API documentation is available via Doxygen:
 
 ```bash
